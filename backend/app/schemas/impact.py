@@ -10,6 +10,8 @@ class ForecastImpactPoint(BaseModel):
     overall_risk_level: str = "Low"
     outage_risk_score: float = 0.0
     estimated_outages: int = 0
+    estimated_outages_low: int = 0
+    estimated_outages_high: int = 0
     vegetation_risk_score: float = 0.0
     load_pct_capacity: float = 0.0
     equipment_stress_score: float = 0.0
@@ -52,16 +54,15 @@ class EquipmentStress(BaseModel):
     line_sag_risk: float = 0.0
 
 
-class CrewRecommendation(BaseModel):
+class JobCountEstimate(BaseModel):
     zone_id: str
     territory: str
-    line_crews: int = 0
-    tree_crews: int = 0
-    service_crews: int = 0
-    total_crews: int = 0
-    mutual_aid_needed: bool = False
-    pre_stage: bool = False
-    notes: list[str] = []
+    outage_risk_score: float = 0.0
+    estimated_jobs_low: int = 0
+    estimated_jobs_mid: int = 0
+    estimated_jobs_high: int = 0
+    risk_level: str = "Low"
+    contributing_factors: list[str] = []
 
 
 class ZoneImpact(BaseModel):
@@ -75,7 +76,7 @@ class ZoneImpact(BaseModel):
     vegetation_risk: VegetationRisk | None = None
     load_forecast: LoadForecast | None = None
     equipment_stress: EquipmentStress | None = None
-    crew_recommendation: CrewRecommendation | None = None
+    job_count_estimate: JobCountEstimate | None = None
     melt_risk: "MeltRisk | None" = None
     summary_text: str = ""
 

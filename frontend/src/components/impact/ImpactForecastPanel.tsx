@@ -57,6 +57,8 @@ function aggregatePoints(
         overall_risk_level: maxOverall.overall_risk_level,
         outage_risk_score: avg((p) => p.outage_risk_score),
         estimated_outages: sum((p) => p.estimated_outages),
+        estimated_outages_low: sum((p) => p.estimated_outages_low),
+        estimated_outages_high: sum((p) => p.estimated_outages_high),
         vegetation_risk_score: avg((p) => p.vegetation_risk_score),
         load_pct_capacity: avg((p) => p.load_pct_capacity),
         equipment_stress_score: avg((p) => p.equipment_stress_score),

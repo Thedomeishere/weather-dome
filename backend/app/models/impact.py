@@ -33,8 +33,8 @@ class ImpactAssessment(Base):
     transformer_risk = Column(Float)
     line_sag_risk = Column(Float)
 
-    # Crew deployment
-    crew_recommendation = Column(JSON)  # {"line_crews": n, "tree_crews": n, ...}
+    # Job count forecast
+    job_count_estimate = Column(JSON)  # {"estimated_jobs_low": n, "estimated_jobs_mid": n, ...}
 
     # Summary
     overall_risk_level = Column(String(20))

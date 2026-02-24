@@ -4,7 +4,6 @@ from fastapi import APIRouter, Query
 
 from app.config import settings
 from app.schemas.dashboard import DashboardResponse, TerritoryOverview
-from app.schemas.impact import CrewRecommendation
 from app.services.impact_engine import get_territory_impacts, get_territory_forecast_impacts
 from app.services.outage_ingest import get_territory_outages
 from app.services.weather_ingest import get_cached_current, get_cached_alerts, get_cached_forecast
@@ -41,10 +40,10 @@ async def get_dashboard(territory: str = Query("CONED", pattern="^(CONED|OR)$"))
     # Forecast impacts per zone
     forecast_impacts = get_territory_forecast_impacts(territory)
 
-    # Crew summary
-    crew_summary = [
-        i.crew_recommendation for i in impacts
-        if i.crew_recommendation is not None
+    # Job forecast
+    job_forecast_list = [
+        i.job_count_estimate for i in impacts
+        if i.job_count_estimate is not None
     ]
 
     # Outage status
@@ -92,7 +91,7 @@ async def get_dashboard(territory: str = Query("CONED", pattern="^(CONED|OR)$"))
         alerts=alerts,
         forecast_timeline=forecast_points,
         forecast_impacts=forecast_impacts,
-        crew_summary=crew_summary,
+        job_forecast=job_forecast_list,
         outage_status=outage_status,
     )
 

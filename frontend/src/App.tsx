@@ -11,7 +11,7 @@ import EquipmentStressCard from "./components/impact/EquipmentStressCard";
 import MeltRiskCard from "./components/impact/MeltRiskCard";
 import RealTimeOutageCard from "./components/impact/RealTimeOutageCard";
 import ImpactForecastPanel from "./components/impact/ImpactForecastPanel";
-import CrewRecommendationPanel from "./components/crew/CrewRecommendationPanel";
+import JobCountForecastPanel from "./components/impact/JobCountForecastPanel";
 
 function App() {
   const [territory, setTerritory] = useState<"CONED" | "OR">("CONED");
@@ -153,8 +153,11 @@ function App() {
               />
             </div>
 
-            {/* Crew Deployment */}
-            <CrewRecommendationPanel crews={data.crew_summary} />
+            {/* Job Count Forecast */}
+            <JobCountForecastPanel
+              jobForecast={data.job_forecast}
+              forecastImpacts={data.forecast_impacts}
+            />
           </>
         )}
       </main>

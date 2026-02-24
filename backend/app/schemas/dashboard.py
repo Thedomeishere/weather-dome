@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.schemas.weather import AlertSchema, WeatherConditions, ForecastPoint
-from app.schemas.impact import ForecastImpactPoint, ZoneImpact, CrewRecommendation
+from app.schemas.impact import ForecastImpactPoint, ZoneImpact, JobCountEstimate
 from app.schemas.outage import ZoneOutageStatus
 
 
@@ -31,5 +31,5 @@ class DashboardResponse(BaseModel):
     alerts: list[AlertSchema] = []
     forecast_timeline: list[ForecastPoint] = []
     forecast_impacts: dict[str, list[ForecastImpactPoint]] = {}
-    crew_summary: list[CrewRecommendation] = []
+    job_forecast: list[JobCountEstimate] = []
     outage_status: list[ZoneOutageStatus] = []

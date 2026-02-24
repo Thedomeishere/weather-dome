@@ -9,7 +9,7 @@ from app.database import SessionLocal
 from app.models.impact import ImpactAssessment
 from app.schemas.impact import ForecastImpactPoint, ZoneImpact
 from app.schemas.weather import ForecastPoint, WeatherConditions
-from app.services import outage_risk, vegetation_risk, load_forecast, equipment_stress, crew_deployment, melt_risk
+from app.services import outage_risk, vegetation_risk, load_forecast, equipment_stress, job_forecast, melt_risk
 from app.services.outage_ingest import get_cached_outages
 from app.services.weather_ingest import get_cached_current, get_cached_forecast
 from app.territory.definitions import ALL_ZONES, ZoneDefinition, get_zones_for_territory
@@ -66,24 +66,28 @@ def compute_zone_forecast_impacts(
         # Adaptive weights: include melt when non-trivial
         if m_risk.score > 5:
             overall_score = (
-                o_risk.score * 0.30
-                + m_risk.score * 0.10
-                + (l_forecast_result.pct_capacity - 40) * 0.6 * 0.18
-                + v_risk.score * 0.13
-                + e_stress.score * 0.14
-                + 0  # no crew proxy for forecast
+                o_risk.score * 0.33
+                + m_risk.score * 0.12
+                + (l_forecast_result.pct_capacity - 40) * 0.6 * 0.20
+                + v_risk.score * 0.15
+                + e_stress.score * 0.20
             )
         else:
             overall_score = (
-                o_risk.score * 0.35
-                + v_risk.score * 0.15
-                + (l_forecast_result.pct_capacity - 40) * 0.6 * 0.20
-                + e_stress.score * 0.15
-                + 0  # no crew proxy for forecast
+                o_risk.score * 0.40
+                + v_risk.score * 0.17
+                + (l_forecast_result.pct_capacity - 40) * 0.6 * 0.23
+                + e_stress.score * 0.20
             )
         overall_score = max(0, min(100, overall_score))
 
         hours_ahead = int((fp.forecast_for - base_time).total_seconds() / 3600)
+
+        # Compute low/high outage ranges for forecast point
+        mid_jobs = job_forecast._estimate_jobs(o_risk.score)
+        low_mult, high_mult = job_forecast._uncertainty_band(o_risk)
+        est_low = max(0, int(mid_jobs * low_mult))
+        est_high = int(mid_jobs * high_mult)
 
         results.append(ForecastImpactPoint(
             forecast_for=fp.forecast_for,
@@ -92,6 +96,8 @@ def compute_zone_forecast_impacts(
             overall_risk_level=_score_to_level(overall_score),
             outage_risk_score=round(o_risk.score, 1),
             estimated_outages=o_risk.estimated_outages,
+            estimated_outages_low=est_low,
+            estimated_outages_high=est_high,
             vegetation_risk_score=round(v_risk.score, 1),
             load_pct_capacity=round(l_forecast_result.pct_capacity, 1),
             equipment_stress_score=round(e_stress.score, 1),
@@ -118,30 +124,28 @@ def compute_zone_impact(zone: ZoneDefinition, weather: WeatherConditions) -> Zon
     v_risk = vegetation_risk.compute(weather)
     l_forecast = load_forecast.compute(weather, zone)
     e_stress = equipment_stress.compute(weather, zone, load_pct=l_forecast.pct_capacity / 100)
-    c_deploy = crew_deployment.compute(zone, o_risk, v_risk)
+    j_forecast = job_forecast.compute(o_risk, zone)
 
     # Adaptive weights: include melt when non-trivial
     if m_risk.score > 5:
         overall_score = (
-            o_risk.score * 0.30
-            + m_risk.score * 0.10
-            + (l_forecast.pct_capacity - 40) * 0.6 * 0.18
-            + v_risk.score * 0.13
-            + e_stress.score * 0.14
-            + min(100, c_deploy.total_crews * 5) * 0.15
+            o_risk.score * 0.33
+            + m_risk.score * 0.12
+            + (l_forecast.pct_capacity - 40) * 0.6 * 0.20
+            + v_risk.score * 0.15
+            + e_stress.score * 0.20
         )
     else:
         overall_score = (
-            o_risk.score * 0.35
-            + v_risk.score * 0.15
-            + (l_forecast.pct_capacity - 40) * 0.6 * 0.20  # normalize load contribution
-            + e_stress.score * 0.15
-            + min(100, c_deploy.total_crews * 5) * 0.15  # crew need as proxy
+            o_risk.score * 0.40
+            + v_risk.score * 0.17
+            + (l_forecast.pct_capacity - 40) * 0.6 * 0.23
+            + e_stress.score * 0.20
         )
     overall_score = max(0, min(100, overall_score))
 
     overall_level = _score_to_level(overall_score)
-    summary = _build_summary(zone, o_risk, v_risk, l_forecast, e_stress, m_risk, overall_level)
+    summary = _build_summary(zone, o_risk, v_risk, l_forecast, e_stress, m_risk, j_forecast, overall_level)
 
     return ZoneImpact(
         zone_id=zone.zone_id,
@@ -154,7 +158,7 @@ def compute_zone_impact(zone: ZoneDefinition, weather: WeatherConditions) -> Zon
         vegetation_risk=v_risk,
         load_forecast=l_forecast,
         equipment_stress=e_stress,
-        crew_recommendation=c_deploy,
+        job_count_estimate=j_forecast,
         melt_risk=m_risk,
         summary_text=summary,
     )
@@ -207,7 +211,7 @@ def _persist_impact(zone: ZoneDefinition, impact: ZoneImpact):
             equipment_stress_level=impact.equipment_stress.level if impact.equipment_stress else None,
             transformer_risk=impact.equipment_stress.transformer_risk if impact.equipment_stress else None,
             line_sag_risk=impact.equipment_stress.line_sag_risk if impact.equipment_stress else None,
-            crew_recommendation=impact.crew_recommendation.model_dump() if impact.crew_recommendation else None,
+            job_count_estimate=impact.job_count_estimate.model_dump() if impact.job_count_estimate else None,
             overall_risk_level=impact.overall_risk_level,
             overall_risk_score=impact.overall_risk_score,
             summary_text=impact.summary_text,
@@ -252,10 +256,15 @@ def _score_to_level(score: float) -> str:
     return "Extreme"
 
 
-def _build_summary(zone, o_risk, v_risk, l_forecast, e_stress, m_risk, level):
+def _build_summary(zone, o_risk, v_risk, l_forecast, e_stress, m_risk, j_forecast, level):
     parts = [f"{zone.name}: {level} overall risk."]
     if o_risk.score > 30:
         parts.append(f"Outage risk {o_risk.level} ({o_risk.estimated_outages} est. outages).")
+    if j_forecast.estimated_jobs_mid > 0:
+        parts.append(
+            f"Predicted jobs: {j_forecast.estimated_jobs_low}-{j_forecast.estimated_jobs_high}"
+            f" (mid {j_forecast.estimated_jobs_mid})."
+        )
     if v_risk.score > 30:
         parts.append(f"Vegetation risk {v_risk.level}.")
     if l_forecast.pct_capacity > 80:

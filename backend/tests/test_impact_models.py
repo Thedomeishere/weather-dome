@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.schemas.weather import WeatherConditions, ForecastPoint
 from app.schemas.impact import OutageRisk
-from app.services import outage_risk, vegetation_risk, load_forecast, equipment_stress, crew_deployment
+from app.services import outage_risk, vegetation_risk, load_forecast, equipment_stress, job_forecast
 from app.services.impact_engine import _forecast_point_to_weather, compute_zone_forecast_impacts
 from app.territory.definitions import CONED_ZONES, OR_ZONES
 
@@ -87,23 +87,39 @@ def test_equipment_stress_hot_loaded():
     assert result.score > 30
 
 
-def test_crew_deployment_low_risk():
+def test_job_forecast_low_risk():
     o = OutageRisk(zone_id="CONED-MAN", score=10, level="Low", estimated_outages=5)
-    v = vegetation_risk.compute(_make_weather(wind_speed_mph=5))
     zone = CONED_ZONES[0]
-    result = crew_deployment.compute(zone, o, v)
-    assert result.total_crews > 0
-    assert not result.mutual_aid_needed
+    result = job_forecast.compute(o, zone)
+    assert result.estimated_jobs_mid >= 0
+    assert result.estimated_jobs_low <= result.estimated_jobs_mid
+    assert result.estimated_jobs_mid <= result.estimated_jobs_high
+    # Low risk => tight band
+    assert result.estimated_jobs_high - result.estimated_jobs_low < 50
 
 
-def test_crew_deployment_extreme():
-    o = OutageRisk(zone_id="CONED-MAN", score=85, level="Extreme", estimated_outages=5000)
-    v = vegetation_risk.compute(_make_weather(wind_speed_mph=60, ice_accum_in=0.3))
+def test_job_forecast_extreme():
+    o = OutageRisk(
+        zone_id="CONED-MAN", score=85, level="Extreme", estimated_outages=5000,
+        contributing_factors=["Wind (60 mph)"],
+    )
     zone = CONED_ZONES[0]
-    result = crew_deployment.compute(zone, o, v)
-    assert result.mutual_aid_needed
-    assert result.pre_stage
-    assert result.total_crews > 10
+    result = job_forecast.compute(o, zone)
+    assert result.estimated_jobs_mid > 1000
+    assert result.estimated_jobs_high > result.estimated_jobs_mid
+    assert result.estimated_jobs_low < result.estimated_jobs_mid
+
+
+def test_job_forecast_ice_wide_band():
+    o = OutageRisk(
+        zone_id="CONED-MAN", score=60, level="High", estimated_outages=2000,
+        contributing_factors=["Ice (0.30 in)", "Wind+Ice synergy"],
+    )
+    zone = CONED_ZONES[0]
+    result = job_forecast.compute(o, zone)
+    # Ice synergy => wide band (high/mid ratio > 2)
+    assert result.estimated_jobs_mid > 0
+    assert result.estimated_jobs_high / result.estimated_jobs_mid > 2
 
 
 def test_forecast_point_to_weather_adapter():
@@ -144,3 +160,5 @@ def test_compute_zone_forecast_impacts():
     for r in results:
         assert 0 <= r.overall_risk_score <= 100
         assert r.overall_risk_level in ("Low", "Moderate", "High", "Extreme")
+        assert r.estimated_outages_low >= 0
+        assert r.estimated_outages_high >= r.estimated_outages_low

@@ -55,6 +55,8 @@ async def test_dashboard_coned(client):
     assert data["territory"] == "CONED"
     assert "overview" in data
     assert data["overview"]["total_zones"] == 6
+    assert "job_forecast" in data
+    assert isinstance(data["job_forecast"], list)
 
 
 @pytest.mark.asyncio
@@ -73,6 +75,8 @@ async def test_dashboard_or(client):
     data = resp.json()
     assert data["territory"] == "OR"
     assert data["overview"]["total_zones"] == 5
+    assert "job_forecast" in data
+    assert isinstance(data["job_forecast"], list)
 
 
 @pytest.mark.asyncio

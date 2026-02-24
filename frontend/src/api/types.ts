@@ -117,16 +117,15 @@ export interface EquipmentStress {
   line_sag_risk: number;
 }
 
-export interface CrewRecommendation {
+export interface JobCountEstimate {
   zone_id: string;
   territory: string;
-  line_crews: number;
-  tree_crews: number;
-  service_crews: number;
-  total_crews: number;
-  mutual_aid_needed: boolean;
-  pre_stage: boolean;
-  notes: string[];
+  outage_risk_score: number;
+  estimated_jobs_low: number;
+  estimated_jobs_mid: number;
+  estimated_jobs_high: number;
+  risk_level: string;
+  contributing_factors: string[];
 }
 
 export interface ZoneImpact {
@@ -140,7 +139,7 @@ export interface ZoneImpact {
   vegetation_risk: VegetationRisk | null;
   load_forecast: LoadForecast | null;
   equipment_stress: EquipmentStress | null;
-  crew_recommendation: CrewRecommendation | null;
+  job_count_estimate: JobCountEstimate | null;
   melt_risk: MeltRisk | null;
   summary_text: string;
 }
@@ -152,6 +151,8 @@ export interface ForecastImpactPoint {
   overall_risk_level: string;
   outage_risk_score: number;
   estimated_outages: number;
+  estimated_outages_low: number;
+  estimated_outages_high: number;
   vegetation_risk_score: number;
   load_pct_capacity: number;
   equipment_stress_score: number;
@@ -182,7 +183,7 @@ export interface DashboardResponse {
   alerts: AlertSchema[];
   forecast_timeline: ForecastPoint[];
   forecast_impacts: Record<string, ForecastImpactPoint[]>;
-  crew_summary: CrewRecommendation[];
+  job_forecast: JobCountEstimate[];
   outage_status: ZoneOutageStatus[];
 }
 
