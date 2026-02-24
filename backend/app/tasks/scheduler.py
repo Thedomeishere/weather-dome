@@ -1,4 +1,4 @@
-"""APScheduler setup for periodic weather ingest and impact computation."""
+"""APScheduler setup for periodic weather ingest, impact computation, and outage ingest."""
 
 import asyncio
 import logging
@@ -34,6 +34,17 @@ def _run_impact_compute():
         loop.close()
 
 
+def _run_outage_ingest():
+    from app.services.outage_ingest import ingest_outages
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(ingest_outages())
+    except Exception as e:
+        logger.error("Outage ingest job failed: %s", e)
+    finally:
+        loop.close()
+
+
 def start_scheduler():
     global _scheduler
     _scheduler = BackgroundScheduler()
@@ -56,11 +67,21 @@ def start_scheduler():
         max_instances=1,
     )
 
+    _scheduler.add_job(
+        _run_outage_ingest,
+        "interval",
+        minutes=settings.ods_ingest_interval,
+        id="outage_ingest",
+        name="Outage data ingestion",
+        max_instances=1,
+    )
+
     _scheduler.start()
     logger.info(
-        "Scheduler started: weather ingest every %d min, impact compute every %d min",
+        "Scheduler started: weather every %d min, impact every %d min, outages every %d min",
         settings.weather_ingest_interval,
         settings.impact_compute_interval,
+        settings.ods_ingest_interval,
     )
 
 

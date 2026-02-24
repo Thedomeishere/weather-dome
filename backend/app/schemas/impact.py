@@ -13,6 +13,7 @@ class ForecastImpactPoint(BaseModel):
     vegetation_risk_score: float = 0.0
     load_pct_capacity: float = 0.0
     equipment_stress_score: float = 0.0
+    melt_risk_score: float = 0.0
 
 
 class OutageRisk(BaseModel):
@@ -21,6 +22,8 @@ class OutageRisk(BaseModel):
     level: str  # Low, Moderate, High, Extreme
     estimated_outages: int = 0
     contributing_factors: list[str] = []
+    actual_outages: int | None = None
+    outage_trend: str = "stable"
 
 
 class VegetationRisk(BaseModel):
@@ -73,4 +76,11 @@ class ZoneImpact(BaseModel):
     load_forecast: LoadForecast | None = None
     equipment_stress: EquipmentStress | None = None
     crew_recommendation: CrewRecommendation | None = None
+    melt_risk: "MeltRisk | None" = None
     summary_text: str = ""
+
+
+# Deferred import to avoid circular dependency
+from app.schemas.outage import MeltRisk  # noqa: E402
+
+ZoneImpact.model_rebuild()

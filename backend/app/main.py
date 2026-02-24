@@ -14,22 +14,23 @@ async def lifespan(app: FastAPI):
     start_scheduler()
     # Run initial ingest on startup
     import asyncio
-    from app.services.weather_ingest import ingest_all_zones
-    from app.services.impact_engine import compute_all_zones
     asyncio.create_task(_initial_ingest())
     yield
     stop_scheduler()
 
 
 async def _initial_ingest():
-    """Run weather ingest + impact compute on startup."""
+    """Run weather ingest + outage ingest + impact compute on startup."""
     import logging
     logger = logging.getLogger(__name__)
     try:
         from app.services.weather_ingest import ingest_all_zones
+        from app.services.outage_ingest import ingest_outages
         from app.services.impact_engine import compute_all_zones
         logger.info("Running initial weather ingest...")
         await ingest_all_zones()
+        logger.info("Running initial outage ingest...")
+        await ingest_outages()
         logger.info("Running initial impact compute...")
         await compute_all_zones()
         logger.info("Initial data load complete")
@@ -52,12 +53,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.routers import dashboard, weather, impact, territory  # noqa: E402
+from app.routers import dashboard, weather, impact, territory, outage  # noqa: E402
 
 app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(weather.router, prefix="/api/v1")
 app.include_router(impact.router, prefix="/api/v1")
 app.include_router(territory.router, prefix="/api/v1")
+app.include_router(outage.router, prefix="/api/v1")
 
 
 @app.get("/health")
@@ -67,9 +69,11 @@ async def health():
 
 @app.post("/api/v1/admin/ingest")
 async def trigger_ingest():
-    """Manually trigger weather ingest + impact recompute."""
+    """Manually trigger weather ingest + outage ingest + impact recompute."""
     from app.services.weather_ingest import ingest_all_zones
+    from app.services.outage_ingest import ingest_outages
     from app.services.impact_engine import compute_all_zones
     await ingest_all_zones()
+    await ingest_outages()
     await compute_all_zones()
     return {"status": "ingest_complete"}

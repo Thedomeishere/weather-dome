@@ -49,12 +49,46 @@ export interface AlertSchema {
   source: string;
 }
 
+export interface OutageIncident {
+  incident_id: string;
+  source: string;
+  status: string;
+  started_at: string | null;
+  region: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  customers_affected: number;
+  cause: string | null;
+}
+
+export interface ZoneOutageStatus {
+  zone_id: string;
+  as_of: string | null;
+  active_outages: number;
+  customers_affected: number;
+  trend: string;
+  incidents: OutageIncident[];
+}
+
+export interface MeltRisk {
+  zone_id: string;
+  score: number;
+  level: string;
+  temperature_trend_f_per_hr: number;
+  melt_potential: number;
+  rain_on_snow_risk: number;
+  freeze_thaw_cycles_48h: number;
+  contributing_factors: string[];
+}
+
 export interface OutageRisk {
   zone_id: string;
   score: number;
   level: string;
   estimated_outages: number;
   contributing_factors: string[];
+  actual_outages: number | null;
+  outage_trend: string;
 }
 
 export interface VegetationRisk {
@@ -107,6 +141,7 @@ export interface ZoneImpact {
   load_forecast: LoadForecast | null;
   equipment_stress: EquipmentStress | null;
   crew_recommendation: CrewRecommendation | null;
+  melt_risk: MeltRisk | null;
   summary_text: string;
 }
 
@@ -120,6 +155,7 @@ export interface ForecastImpactPoint {
   vegetation_risk_score: number;
   load_pct_capacity: number;
   equipment_stress_score: number;
+  melt_risk_score: number;
 }
 
 export interface TerritoryOverview {
@@ -131,6 +167,9 @@ export interface TerritoryOverview {
   total_zones: number;
   peak_load_pct: number;
   total_estimated_outages: number;
+  total_actual_outages: number;
+  max_melt_risk_score: number;
+  max_melt_risk_level: string;
 }
 
 export interface DashboardResponse {
@@ -144,6 +183,7 @@ export interface DashboardResponse {
   forecast_timeline: ForecastPoint[];
   forecast_impacts: Record<string, ForecastImpactPoint[]>;
   crew_summary: CrewRecommendation[];
+  outage_status: ZoneOutageStatus[];
 }
 
 export interface ZoneInfo {

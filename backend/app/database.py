@@ -25,4 +25,7 @@ def get_db():
 
 
 def init_db():
+    import app.models.weather  # noqa: F401
+    import app.models.impact  # noqa: F401
+    import app.models.outage  # noqa: F401
     Base.metadata.create_all(bind=engine)

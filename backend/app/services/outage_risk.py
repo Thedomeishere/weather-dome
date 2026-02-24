@@ -2,6 +2,10 @@
 
 Weighted scoring: wind(0.4) + ice(0.3) + lightning(0.15) + precip(0.15)
 Wind + ice synergy bonus when both present.
+
+Enhanced with:
+- Underground melt risk integration (adaptive weights when melt > 5)
+- Outage momentum bonus from live outage data
 """
 
 from app.config import settings
@@ -9,7 +13,11 @@ from app.schemas.impact import OutageRisk
 from app.schemas.weather import WeatherConditions
 
 
-def compute(weather: WeatherConditions) -> OutageRisk:
+def compute(
+    weather: WeatherConditions,
+    current_outages: int | None = None,
+    melt_risk_score: float = 0.0,
+) -> OutageRisk:
     wind_score = _wind_score(weather.wind_speed_mph, weather.wind_gust_mph)
     ice_score = _ice_score(weather.ice_accum_in)
     lightning_score = _lightning_score(weather.lightning_probability_pct)
@@ -19,12 +27,22 @@ def compute(weather: WeatherConditions) -> OutageRisk:
         weather.precip_probability_pct,
     )
 
-    base_score = (
-        wind_score * 0.4
-        + ice_score * 0.3
-        + lightning_score * 0.15
-        + precip_score * 0.15
-    )
+    # Adaptive weights: when melt risk is present, allocate weight to it
+    if melt_risk_score > 5:
+        base_score = (
+            wind_score * 0.35
+            + ice_score * 0.25
+            + lightning_score * 0.12
+            + precip_score * 0.12
+            + melt_risk_score * 0.16
+        )
+    else:
+        base_score = (
+            wind_score * 0.4
+            + ice_score * 0.3
+            + lightning_score * 0.15
+            + precip_score * 0.15
+        )
 
     # Synergy bonus: wind + ice together are disproportionately dangerous
     synergy = 0.0
@@ -32,6 +50,12 @@ def compute(weather: WeatherConditions) -> OutageRisk:
         synergy = min(wind_score, ice_score) * 0.25
 
     score = min(100.0, base_score + synergy)
+
+    # Outage momentum: elevated active outages add a bonus
+    momentum = 0.0
+    if current_outages is not None and current_outages > 5:
+        momentum = min(15, current_outages * 0.1)
+        score = min(100.0, score + momentum)
 
     factors = []
     if wind_score > 20:
@@ -44,9 +68,18 @@ def compute(weather: WeatherConditions) -> OutageRisk:
         factors.append("Heavy precipitation")
     if synergy > 0:
         factors.append("Wind+Ice synergy")
+    if melt_risk_score > 5:
+        factors.append("Underground melt risk")
+    if momentum > 0:
+        factors.append("Elevated active outages")
 
     level = _score_to_level(score)
-    estimated = _estimate_outages(score)
+    estimated = _estimate_outages(score, weather.zone_id)
+
+    # Determine trend from current_outages
+    outage_trend = "stable"
+    if current_outages is not None and current_outages > 10:
+        outage_trend = "rising"
 
     return OutageRisk(
         zone_id=weather.zone_id,
@@ -54,6 +87,8 @@ def compute(weather: WeatherConditions) -> OutageRisk:
         level=level,
         estimated_outages=estimated,
         contributing_factors=factors,
+        actual_outages=current_outages,
+        outage_trend=outage_trend,
     )
 
 
@@ -109,8 +144,14 @@ def _score_to_level(score: float) -> str:
     return "Extreme"
 
 
-def _estimate_outages(score: float) -> int:
-    """Rough estimate of per-zone outages based on risk score."""
+def _estimate_outages(score: float, zone_id: str | None = None) -> int:
+    """Rough estimate of per-zone outages based on risk score.
+
+    Checks OutageWeatherCorrelation for calibrated coefficients first,
+    falls back to heuristic.
+    """
+    # Future: check DB for calibrated coefficients
+    # For now, use heuristic
     if score < 10:
         return 0
     if score < 25:

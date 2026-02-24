@@ -60,6 +60,7 @@ function aggregatePoints(
         vegetation_risk_score: avg((p) => p.vegetation_risk_score),
         load_pct_capacity: avg((p) => p.load_pct_capacity),
         equipment_stress_score: avg((p) => p.equipment_stress_score),
+        melt_risk_score: avg((p) => p.melt_risk_score),
       };
     });
 }
@@ -92,6 +93,7 @@ export default function ImpactForecastPanel({ forecastImpacts }: Props) {
         outage: p.outage_risk_score,
         equipment: p.equipment_stress_score,
         load: p.load_pct_capacity,
+        meltRisk: p.melt_risk_score,
       })),
     [points],
   );
@@ -216,6 +218,16 @@ export default function ImpactForecastPanel({ forecastImpacts }: Props) {
             name="Load % Capacity"
             dot={false}
             strokeWidth={1.5}
+          />
+          <Line
+            yAxisId="left"
+            type="monotone"
+            dataKey="meltRisk"
+            stroke="#06b6d4"
+            name="Melt Risk"
+            dot={false}
+            strokeWidth={1.5}
+            strokeDasharray="4 2"
           />
         </ComposedChart>
       </ResponsiveContainer>

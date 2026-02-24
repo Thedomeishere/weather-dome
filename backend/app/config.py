@@ -37,6 +37,19 @@ class Settings(BaseSettings):
     coned_peak_capacity_mw: float = Field(default=13400.0)
     or_peak_capacity_mw: float = Field(default=1300.0)
 
+    # ODS (Open Data Sources) outage API
+    ods_api_url: str = Field(default="https://ods-api.m-8b1.workers.dev/incidents")
+    ods_ingest_interval: int = Field(default=10)  # minutes
+
+    # PowerOutage.us (future — requires API key)
+    poweroutage_us_api_key: str = Field(default="")
+    poweroutage_us_api_url: str = Field(default="")
+
+    # Underground melt risk thresholds
+    melt_risk_freezing_point_f: float = Field(default=32.0)
+    melt_risk_warm_threshold_f: float = Field(default=40.0)
+    melt_risk_rapid_warming_rate_f_per_hr: float = Field(default=3.0)
+
     # CORS
     cors_origins: str = Field(default="http://localhost:5173,http://localhost:3000,https://weather.domevision.org")
 

@@ -8,6 +8,8 @@ import OutageRiskCard from "./components/impact/OutageRiskCard";
 import VegetationRiskCard from "./components/impact/VegetationRiskCard";
 import LoadForecastCard from "./components/impact/LoadForecastCard";
 import EquipmentStressCard from "./components/impact/EquipmentStressCard";
+import MeltRiskCard from "./components/impact/MeltRiskCard";
+import RealTimeOutageCard from "./components/impact/RealTimeOutageCard";
 import ImpactForecastPanel from "./components/impact/ImpactForecastPanel";
 import CrewRecommendationPanel from "./components/crew/CrewRecommendationPanel";
 
@@ -79,7 +81,7 @@ function App() {
             )}
 
             {/* Overview Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
               <OverviewCard
                 label="Overall Risk"
                 value={data.overview.overall_risk_level}
@@ -94,6 +96,11 @@ function App() {
                 label="Est. Outages"
                 value={data.overview.total_estimated_outages.toLocaleString()}
                 color={data.overview.total_estimated_outages > 100 ? "text-red-600" : "text-green-600"}
+              />
+              <OverviewCard
+                label="Active Outages"
+                value={data.overview.total_actual_outages.toLocaleString()}
+                color={data.overview.total_actual_outages > 0 ? "text-red-600" : "text-green-600"}
               />
               <OverviewCard
                 label="Peak Load"
@@ -116,12 +123,20 @@ function App() {
             <h2 className="text-lg font-semibold text-gray-800 mb-3">
               Impact Assessment
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
               <OutageRiskCard zones={data.zones} />
               <VegetationRiskCard zones={data.zones} />
               <LoadForecastCard zones={data.zones} />
               <EquipmentStressCard zones={data.zones} />
+              <MeltRiskCard zones={data.zones} />
             </div>
+
+            {/* Real-Time Outage Card */}
+            {data.outage_status.length > 0 && (
+              <div className="mb-6">
+                <RealTimeOutageCard outageStatus={data.outage_status} />
+              </div>
+            )}
 
             {/* Impact Forecast */}
             {Object.keys(data.forecast_impacts).length > 0 && (

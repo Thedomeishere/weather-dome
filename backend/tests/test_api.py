@@ -112,3 +112,46 @@ async def test_geojson_or(client):
     data = resp.json()
     assert data["type"] == "FeatureCollection"
     assert len(data["features"]) == 5
+
+
+@pytest.mark.asyncio
+async def test_dashboard_has_outage_status(client):
+    resp = await client.get("/api/v1/dashboard/", params={"territory": "CONED"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "outage_status" in data
+    assert isinstance(data["outage_status"], list)
+
+
+@pytest.mark.asyncio
+async def test_dashboard_has_melt_risk_fields(client):
+    resp = await client.get("/api/v1/dashboard/", params={"territory": "CONED"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "total_actual_outages" in data["overview"]
+    assert "max_melt_risk_score" in data["overview"]
+    assert "max_melt_risk_level" in data["overview"]
+
+
+@pytest.mark.asyncio
+async def test_dashboard_zones_have_melt_risk(client):
+    resp = await client.get("/api/v1/dashboard/", params={"territory": "CONED"})
+    assert resp.status_code == 200
+    data = resp.json()
+    for zone in data.get("zones", []):
+        assert "melt_risk" in zone
+
+
+@pytest.mark.asyncio
+async def test_outages_endpoint(client):
+    resp = await client.get("/api/v1/outages/")
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_outages_territory_filter(client):
+    resp = await client.get("/api/v1/outages/", params={"territory": "CONED"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
