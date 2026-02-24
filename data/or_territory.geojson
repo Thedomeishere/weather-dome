@@ -1,0 +1,45 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "OR-ORA", "name": "Orange County", "territory": "OR" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-74.76, 41.18], [-74.08, 41.18], [-74.08, 41.53], [-74.76, 41.53], [-74.76, 41.18]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "OR-ROC", "name": "Rockland County", "territory": "OR" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-74.23, 41.03], [-73.90, 41.03], [-73.90, 41.24], [-74.23, 41.24], [-74.23, 41.03]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "OR-SUL", "name": "Sullivan County", "territory": "OR" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-75.14, 41.50], [-74.44, 41.50], [-74.44, 41.87], [-75.14, 41.87], [-75.14, 41.50]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "OR-BER", "name": "Northern Bergen/Passaic", "territory": "OR" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-74.30, 40.96], [-74.02, 40.96], [-74.02, 41.13], [-74.30, 41.13], [-74.30, 40.96]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "OR-SSX", "name": "Sussex County", "territory": "OR" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-74.90, 41.02], [-74.50, 41.02], [-74.50, 41.36], [-74.90, 41.36], [-74.90, 41.02]]]
+      }
+    }
+  ]
+}

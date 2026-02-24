@@ -1,0 +1,15 @@
+{
+  "zones": {
+    "NYZ067": { "name": "Southern Westchester", "territory": "CONED", "zone_id": "CONED-WST" },
+    "NYZ068": { "name": "Orange County", "territory": "OR", "zone_id": "OR-ORA" },
+    "NYZ069": { "name": "Rockland County", "territory": "OR", "zone_id": "OR-ROC" },
+    "NYZ070": { "name": "Sullivan County", "territory": "OR", "zone_id": "OR-SUL" },
+    "NYZ072": { "name": "New York (Manhattan)", "territory": "CONED", "zone_id": "CONED-MAN" },
+    "NYZ073": { "name": "Bronx", "territory": "CONED", "zone_id": "CONED-BRX" },
+    "NYZ074": { "name": "Richmond (Staten Island)", "territory": "CONED", "zone_id": "CONED-SI" },
+    "NYZ075": { "name": "Kings (Brooklyn)", "territory": "CONED", "zone_id": "CONED-BKN" },
+    "NYZ076": { "name": "Queens", "territory": "CONED", "zone_id": "CONED-QNS" },
+    "NJZ006": { "name": "Northern Bergen/Passaic", "territory": "OR", "zone_id": "OR-BER" },
+    "NJZ008": { "name": "Sussex County", "territory": "OR", "zone_id": "OR-SSX" }
+  }
+}

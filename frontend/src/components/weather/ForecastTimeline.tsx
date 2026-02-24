@@ -1,0 +1,90 @@
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Line,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from "recharts";
+import type { ForecastPoint } from "../../api/types";
+
+interface Props {
+  points: ForecastPoint[];
+}
+
+export default function ForecastTimeline({ points }: Props) {
+  const chartData = points.map((p) => ({
+    time: new Date(p.forecast_for).toLocaleString("en-US", {
+      weekday: "short",
+      hour: "numeric",
+    }),
+    temp: p.temperature_f,
+    wind: p.wind_speed_mph,
+    precipProb: p.precip_probability_pct,
+  }));
+
+  return (
+    <div className="bg-white rounded-lg shadow p-4">
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">
+        48-Hour Forecast Timeline
+      </h3>
+      {chartData.length === 0 ? (
+        <p className="text-gray-400 text-sm py-8 text-center">
+          No forecast data available yet.
+        </p>
+      ) : (
+        <ResponsiveContainer width="100%" height={250}>
+          <ComposedChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis
+              dataKey="time"
+              tick={{ fontSize: 10 }}
+              interval={5}
+            />
+            <YAxis
+              yAxisId="left"
+              tick={{ fontSize: 10 }}
+              label={{ value: "°F / mph", angle: -90, position: "insideLeft", fontSize: 10 }}
+            />
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              tick={{ fontSize: 10 }}
+              label={{ value: "Precip %", angle: 90, position: "insideRight", fontSize: 10 }}
+            />
+            <Tooltip />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Line
+              yAxisId="left"
+              type="monotone"
+              dataKey="temp"
+              stroke="#ef4444"
+              name="Temp (°F)"
+              dot={false}
+              strokeWidth={2}
+            />
+            <Line
+              yAxisId="left"
+              type="monotone"
+              dataKey="wind"
+              stroke="#3b82f6"
+              name="Wind (mph)"
+              dot={false}
+              strokeWidth={2}
+            />
+            <Bar
+              yAxisId="right"
+              dataKey="precipProb"
+              fill="#93c5fd"
+              name="Precip %"
+              opacity={0.5}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+}

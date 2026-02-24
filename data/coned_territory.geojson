@@ -1,0 +1,53 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "CONED-MAN", "name": "Manhattan", "territory": "CONED" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-74.02, 40.70], [-73.97, 40.70], [-73.91, 40.80], [-73.93, 40.88], [-74.02, 40.78], [-74.02, 40.70]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "CONED-BRX", "name": "Bronx", "territory": "CONED" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-73.93, 40.80], [-73.83, 40.80], [-73.77, 40.88], [-73.91, 40.92], [-73.93, 40.88], [-73.93, 40.80]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "CONED-BKN", "name": "Brooklyn", "territory": "CONED" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-74.04, 40.57], [-73.86, 40.57], [-73.86, 40.70], [-74.04, 40.70], [-74.04, 40.57]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "CONED-QNS", "name": "Queens", "territory": "CONED" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-73.86, 40.57], [-73.70, 40.57], [-73.70, 40.80], [-73.83, 40.80], [-73.86, 40.70], [-73.86, 40.57]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "CONED-SI", "name": "Staten Island", "territory": "CONED" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-74.26, 40.50], [-74.05, 40.50], [-74.05, 40.65], [-74.26, 40.65], [-74.26, 40.50]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "zone_id": "CONED-WST", "name": "Westchester", "territory": "CONED" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-73.98, 40.88], [-73.70, 40.88], [-73.70, 41.18], [-73.98, 41.18], [-73.98, 40.88]]]
+      }
+    }
+  ]
+}
