@@ -61,7 +61,7 @@ async def fetch_forecast(zone: ZoneDefinition) -> ZoneForecast | None:
         return None
 
     location = f"{zone.latitude},{zone.longitude}"
-    url = f"{VC_BASE}/{location}/next2days"
+    url = f"{VC_BASE}/{location}/next5days"
     params = {
         "key": settings.visual_crossing_api_key,
         "unitGroup": "us",
@@ -105,7 +105,7 @@ async def fetch_forecast(zone: ZoneDefinition) -> ZoneForecast | None:
                 zone_id=zone.zone_id,
                 source="visual_crossing",
                 fetched_at=now,
-                points=points[:48],
+                points=points[:120],
             )
     except Exception as e:
         logger.warning("Visual Crossing forecast fetch failed for %s: %s", zone.zone_id, e)

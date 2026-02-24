@@ -110,6 +110,18 @@ export interface ZoneImpact {
   summary_text: string;
 }
 
+export interface ForecastImpactPoint {
+  forecast_for: string;
+  forecast_hour: number;
+  overall_risk_score: number;
+  overall_risk_level: string;
+  outage_risk_score: number;
+  estimated_outages: number;
+  vegetation_risk_score: number;
+  load_pct_capacity: number;
+  equipment_stress_score: number;
+}
+
 export interface TerritoryOverview {
   territory: string;
   overall_risk_level: string;
@@ -130,6 +142,7 @@ export interface DashboardResponse {
   current_weather: WeatherConditions[];
   alerts: AlertSchema[];
   forecast_timeline: ForecastPoint[];
+  forecast_impacts: Record<string, ForecastImpactPoint[]>;
   crew_summary: CrewRecommendation[];
 }
 

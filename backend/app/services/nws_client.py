@@ -68,7 +68,7 @@ async def fetch_forecast(zone: ZoneDefinition) -> ZoneForecast | None:
 
             now = datetime.now(timezone.utc)
             points = []
-            for p in periods[:48]:
+            for p in periods[:120]:
                 points.append(ForecastPoint(
                     forecast_for=p["startTime"],
                     temperature_f=p.get("temperature"),

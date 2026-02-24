@@ -92,7 +92,7 @@ def aggregate_forecasts(forecasts: list[ZoneForecast], zone_id: str) -> ZoneFore
         zone_id=zone_id,
         source="aggregated",
         fetched_at=datetime.now(timezone.utc),
-        points=merged_points[:48],
+        points=merged_points[:120],
     )
 
 

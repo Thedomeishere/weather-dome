@@ -1,8 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from app.schemas.weather import WeatherConditions
+from app.schemas.weather import WeatherConditions, ForecastPoint
 from app.schemas.impact import OutageRisk
 from app.services import outage_risk, vegetation_risk, load_forecast, equipment_stress, crew_deployment
+from app.services.impact_engine import _forecast_point_to_weather, compute_zone_forecast_impacts
 from app.territory.definitions import CONED_ZONES, OR_ZONES
 
 
@@ -103,3 +104,43 @@ def test_crew_deployment_extreme():
     assert result.mutual_aid_needed
     assert result.pre_stage
     assert result.total_crews > 10
+
+
+def test_forecast_point_to_weather_adapter():
+    now = datetime.now(timezone.utc)
+    fp = ForecastPoint(
+        forecast_for=now,
+        temperature_f=95.0,
+        wind_speed_mph=40.0,
+        ice_accum_in=0.2,
+    )
+    w = _forecast_point_to_weather(fp, "CONED-MAN")
+    assert w.zone_id == "CONED-MAN"
+    assert w.source == "forecast"
+    assert w.observed_at == now
+    assert w.temperature_f == 95.0
+    assert w.wind_speed_mph == 40.0
+    assert w.ice_accum_in == 0.2
+
+
+def test_compute_zone_forecast_impacts():
+    zone = CONED_ZONES[0]
+    now = datetime.now(timezone.utc)
+    # Create 12 hourly points (every 3rd will be sampled = 4 results)
+    points = [
+        ForecastPoint(
+            forecast_for=now + timedelta(hours=i),
+            temperature_f=90.0,
+            wind_speed_mph=30.0,
+        )
+        for i in range(12)
+    ]
+    results = compute_zone_forecast_impacts(zone, points)
+    assert len(results) == 4  # indices 0, 3, 6, 9
+    assert results[0].forecast_hour == 0
+    assert results[1].forecast_hour == 3
+    assert results[2].forecast_hour == 6
+    assert results[3].forecast_hour == 9
+    for r in results:
+        assert 0 <= r.overall_risk_score <= 100
+        assert r.overall_risk_level in ("Low", "Moderate", "High", "Extreme")

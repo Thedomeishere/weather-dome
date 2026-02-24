@@ -3,6 +3,18 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
+class ForecastImpactPoint(BaseModel):
+    forecast_for: datetime
+    forecast_hour: int
+    overall_risk_score: float = 0.0
+    overall_risk_level: str = "Low"
+    outage_risk_score: float = 0.0
+    estimated_outages: int = 0
+    vegetation_risk_score: float = 0.0
+    load_pct_capacity: float = 0.0
+    equipment_stress_score: float = 0.0
+
+
 class OutageRisk(BaseModel):
     zone_id: str
     score: float  # 0-100

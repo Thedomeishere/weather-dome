@@ -58,6 +58,15 @@ async def test_dashboard_coned(client):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_has_forecast_impacts(client):
+    resp = await client.get("/api/v1/dashboard/", params={"territory": "CONED"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "forecast_impacts" in data
+    assert isinstance(data["forecast_impacts"], dict)
+
+
+@pytest.mark.asyncio
 async def test_dashboard_or(client):
     resp = await client.get("/api/v1/dashboard/", params={"territory": "OR"})
     assert resp.status_code == 200

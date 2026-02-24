@@ -22,7 +22,7 @@ async def fetch_current(zone: ZoneDefinition) -> WeatherConditions | None:
         "lon": zone.longitude,
         "appid": settings.owm_api_key,
         "units": "imperial",
-        "exclude": "minutely,daily",
+        "exclude": "minutely",
     }
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -61,7 +61,7 @@ async def fetch_forecast(zone: ZoneDefinition) -> ZoneForecast | None:
         "lon": zone.longitude,
         "appid": settings.owm_api_key,
         "units": "imperial",
-        "exclude": "minutely,daily,current",
+        "exclude": "minutely,current",
     }
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -71,7 +71,7 @@ async def fetch_forecast(zone: ZoneDefinition) -> ZoneForecast | None:
             now = datetime.now(timezone.utc)
 
             points = []
-            for h in data.get("hourly", [])[:48]:
+            for h in data.get("hourly", []):
                 points.append(ForecastPoint(
                     forecast_for=datetime.fromtimestamp(h["dt"], tz=timezone.utc),
                     temperature_f=h.get("temp"),
@@ -82,6 +82,21 @@ async def fetch_forecast(zone: ZoneDefinition) -> ZoneForecast | None:
                     precip_probability_pct=(h.get("pop", 0) * 100),
                     cloud_cover_pct=h.get("clouds"),
                     condition_text=h.get("weather", [{}])[0].get("description"),
+                ))
+
+            # Append daily entries for days 3-5 as extra forecast points
+            for d in data.get("daily", [])[2:]:
+                dt = datetime.fromtimestamp(d["dt"], tz=timezone.utc)
+                points.append(ForecastPoint(
+                    forecast_for=dt,
+                    temperature_f=d.get("temp", {}).get("day"),
+                    feels_like_f=d.get("feels_like", {}).get("day"),
+                    humidity_pct=d.get("humidity"),
+                    wind_speed_mph=d.get("wind_speed"),
+                    wind_gust_mph=d.get("wind_gust"),
+                    precip_probability_pct=(d.get("pop", 0) * 100),
+                    cloud_cover_pct=d.get("clouds"),
+                    condition_text=d.get("weather", [{}])[0].get("description"),
                 ))
 
             return ZoneForecast(

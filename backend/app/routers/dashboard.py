@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from app.config import settings
 from app.schemas.dashboard import DashboardResponse, TerritoryOverview
 from app.schemas.impact import CrewRecommendation
-from app.services.impact_engine import get_territory_impacts
+from app.services.impact_engine import get_territory_impacts, get_territory_forecast_impacts
 from app.services.weather_ingest import get_cached_current, get_cached_alerts, get_cached_forecast
 from app.territory.definitions import get_zones_for_territory
 
@@ -36,6 +36,9 @@ async def get_dashboard(territory: str = Query("CONED", pattern="^(CONED|OR)$"))
         fc = get_cached_forecast(zones[0].zone_id)
         if fc:
             forecast_points = fc.points
+
+    # Forecast impacts per zone
+    forecast_impacts = get_territory_forecast_impacts(territory)
 
     # Crew summary
     crew_summary = [
@@ -74,6 +77,7 @@ async def get_dashboard(territory: str = Query("CONED", pattern="^(CONED|OR)$"))
         current_weather=weather_list,
         alerts=alerts,
         forecast_timeline=forecast_points,
+        forecast_impacts=forecast_impacts,
         crew_summary=crew_summary,
     )
 

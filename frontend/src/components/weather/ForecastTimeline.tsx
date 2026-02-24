@@ -3,33 +3,52 @@ import {
   ComposedChart,
   Line,
   Bar,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
 } from "recharts";
-import type { ForecastPoint } from "../../api/types";
+import type { ForecastPoint, ForecastImpactPoint } from "../../api/types";
 
 interface Props {
   points: ForecastPoint[];
+  forecastImpacts?: Record<string, ForecastImpactPoint[]>;
 }
 
-export default function ForecastTimeline({ points }: Props) {
-  const chartData = points.map((p) => ({
-    time: new Date(p.forecast_for).toLocaleString("en-US", {
-      weekday: "short",
-      hour: "numeric",
-    }),
-    temp: p.temperature_f,
-    wind: p.wind_speed_mph,
-    precipProb: p.precip_probability_pct,
-  }));
+export default function ForecastTimeline({ points, forecastImpacts }: Props) {
+  // Build a risk lookup from the first zone's forecast impacts
+  const riskByHour: Record<string, number> = {};
+  if (forecastImpacts) {
+    const firstZone = Object.values(forecastImpacts)[0];
+    if (firstZone) {
+      for (const fi of firstZone) {
+        const key = new Date(fi.forecast_for).toISOString().slice(0, 13);
+        riskByHour[key] = fi.overall_risk_score;
+      }
+    }
+  }
+
+  const chartData = points.map((p) => {
+    const dt = new Date(p.forecast_for);
+    const hourKey = dt.toISOString().slice(0, 13);
+    return {
+      time: dt.toLocaleString("en-US", {
+        weekday: "short",
+        hour: "numeric",
+      }),
+      temp: p.temperature_f,
+      wind: p.wind_speed_mph,
+      precipProb: p.precip_probability_pct,
+      risk: riskByHour[hourKey] ?? null,
+    };
+  });
 
   return (
     <div className="bg-white rounded-lg shadow p-4">
       <h3 className="text-sm font-semibold text-gray-700 mb-3">
-        48-Hour Forecast Timeline
+        5-Day Forecast Timeline
       </h3>
       {chartData.length === 0 ? (
         <p className="text-gray-400 text-sm py-8 text-center">
@@ -42,7 +61,7 @@ export default function ForecastTimeline({ points }: Props) {
             <XAxis
               dataKey="time"
               tick={{ fontSize: 10 }}
-              interval={5}
+              interval={11}
             />
             <YAxis
               yAxisId="left"
@@ -53,10 +72,22 @@ export default function ForecastTimeline({ points }: Props) {
               yAxisId="right"
               orientation="right"
               tick={{ fontSize: 10 }}
-              label={{ value: "Precip %", angle: 90, position: "insideRight", fontSize: 10 }}
+              domain={[0, 100]}
+              label={{ value: "Risk / Precip %", angle: 90, position: "insideRight", fontSize: 10 }}
             />
             <Tooltip />
             <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Area
+              yAxisId="right"
+              type="monotone"
+              dataKey="risk"
+              stroke="#dc2626"
+              fill="#fca5a5"
+              name="Risk Score"
+              fillOpacity={0.3}
+              connectNulls
+              dot={false}
+            />
             <Line
               yAxisId="left"
               type="monotone"

@@ -8,6 +8,7 @@ import OutageRiskCard from "./components/impact/OutageRiskCard";
 import VegetationRiskCard from "./components/impact/VegetationRiskCard";
 import LoadForecastCard from "./components/impact/LoadForecastCard";
 import EquipmentStressCard from "./components/impact/EquipmentStressCard";
+import ImpactForecastPanel from "./components/impact/ImpactForecastPanel";
 import CrewRecommendationPanel from "./components/crew/CrewRecommendationPanel";
 
 function App() {
@@ -122,9 +123,19 @@ function App() {
               <EquipmentStressCard zones={data.zones} />
             </div>
 
+            {/* Impact Forecast */}
+            {Object.keys(data.forecast_impacts).length > 0 && (
+              <div className="mb-6">
+                <ImpactForecastPanel forecastImpacts={data.forecast_impacts} />
+              </div>
+            )}
+
             {/* Forecast Timeline */}
             <div className="mb-6">
-              <ForecastTimeline points={data.forecast_timeline} />
+              <ForecastTimeline
+                points={data.forecast_timeline}
+                forecastImpacts={data.forecast_impacts}
+              />
             </div>
 
             {/* Crew Deployment */}

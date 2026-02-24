@@ -21,7 +21,7 @@ def compute(weather: WeatherConditions, zone: ZoneDefinition) -> LoadForecast:
     zone_capacity = capacity * zone.peak_load_share
 
     temp = weather.temperature_f or 65.0
-    hour = datetime.now(timezone.utc).hour
+    hour = weather.observed_at.hour if weather.observed_at else datetime.now(timezone.utc).hour
 
     temp_factor = _temperature_demand_factor(temp)
     tod_factor = _time_of_day_factor(hour)
