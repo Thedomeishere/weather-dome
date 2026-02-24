@@ -68,6 +68,7 @@ def _parse_summary(data: dict) -> list[OutageIncident]:
             latitude=zone.latitude,
             longitude=zone.longitude,
             customers_affected=zone_customers,
+            outage_count=zone_outages,
         ))
 
     logger.info(

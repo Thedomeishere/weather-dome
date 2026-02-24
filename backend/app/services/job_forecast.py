@@ -47,14 +47,18 @@ def _uncertainty_band(outage_risk: OutageRisk) -> tuple[float, float]:
 
     has_ice = any("Ice" in f and "synergy" not in f for f in factors)
     has_wind = any("Wind" in f and "synergy" not in f for f in factors)
-    has_synergy = any("Wind+Ice synergy" in f for f in factors)
+    has_snow = any("Snow" in f and "synergy" not in f for f in factors)
+    has_synergy = any("synergy" in f for f in factors)
 
     if has_synergy:
-        # Wind+Ice synergy: cascading failures likely
+        # Wind+Ice or Wind+Snow synergy: cascading failures likely
         return 0.3, 3.0
     if has_ice:
         # Ice events: ice loading hard to predict
         return 0.3, 2.5
+    if has_snow:
+        # Snow events: wet snow loading unpredictable
+        return 0.4, 2.0
     if has_wind:
         # Wind-only events: moderate predictability
         return 0.5, 1.8

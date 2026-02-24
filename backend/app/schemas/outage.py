@@ -12,6 +12,7 @@ class OutageIncident(BaseModel):
     latitude: float | None = None
     longitude: float | None = None
     customers_affected: int = 0
+    outage_count: int = 1  # number of discrete outages this incident represents
     cause: str | None = None
 
 
@@ -31,5 +32,6 @@ class MeltRisk(BaseModel):
     temperature_trend_f_per_hr: float = 0.0
     melt_potential: float = 0.0
     rain_on_snow_risk: float = 0.0
+    salt_melt_risk: float = 0.0
     freeze_thaw_cycles_48h: int = 0
     contributing_factors: list[str] = []

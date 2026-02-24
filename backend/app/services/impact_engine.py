@@ -33,6 +33,8 @@ def _forecast_point_to_weather(fp: ForecastPoint, zone_id: str) -> WeatherCondit
         wind_speed_mph=fp.wind_speed_mph,
         wind_gust_mph=fp.wind_gust_mph,
         precip_probability_pct=fp.precip_probability_pct,
+        precip_rate_in_hr=fp.precip_amount_in,
+        snow_rate_in_hr=fp.snow_amount_in,
         ice_accum_in=fp.ice_accum_in,
         lightning_probability_pct=fp.lightning_probability_pct,
         condition_text=fp.condition_text,

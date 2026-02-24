@@ -157,7 +157,7 @@ async def ingest_outages():
     for zone in ALL_ZONES:
         zid = zone.zone_id
         zone_incs = zone_incidents[zid]
-        active = len(zone_incs)
+        active = sum(i.outage_count for i in zone_incs)
         customers = sum(i.customers_affected for i in zone_incs)
 
         # Compute trend vs previous cached value
@@ -197,9 +197,9 @@ def _persist_snapshots(snapshot_at: datetime, zone_incidents: dict[str, list[Out
                 zone_id=zone_id,
                 source=",".join(sorted(sources)),
                 snapshot_at=snapshot_at,
-                outage_count=len(incs),
+                outage_count=sum(i.outage_count for i in incs),
                 customers_affected=sum(i.customers_affected for i in incs),
-                active_incidents=len(incs),
+                active_incidents=sum(i.outage_count for i in incs),
                 raw_json=json.dumps([i.model_dump(mode="json") for i in incs]) if incs else None,
             )
             db.add(snapshot)

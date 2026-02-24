@@ -3,11 +3,13 @@
 Snowmelt/ice-melt causes manhole events and cable failures (2000+/year in NYC,
 peaking Feb-Mar). Uses 48h weather history to detect dangerous melt conditions.
 
-Four sub-scores:
-- Temperature trend (35%): Rate of warming from <32F to >40F
-- Melt potential (25%): Current temp above freezing + recent snow accumulation
-- Rain-on-snow (25%): Active precipitation when snow cover exists and temp >32F
-- Freeze-thaw cycling (15%): Count of 32F crossings in 48h
+Five sub-scores:
+- Temperature trend (30%): Rate of warming from <32F to >40F
+- Melt potential (20%): Current temp above freezing + recent snow accumulation
+- Rain-on-snow (20%): Active precipitation when snow cover exists and temp >32F
+- Salt-melt contamination (20%): Road salt + melting snow creates conductive brine
+  that infiltrates manholes/vaults causing short circuits and fires
+- Freeze-thaw cycling (10%): Count of 32F crossings in 48h
 
 Modifiers: underground density * seasonal factor
 """
@@ -142,7 +144,25 @@ def compute(
         rain_on_snow = precip_factor * 100
         factors.append("Rain-on-snow accelerating melt")
 
-    # --- Sub-score 4: Freeze-thaw cycles (15%) ---
+    # --- Sub-score 4: Salt-melt contamination (20%) ---
+    # Heavy snow → more road salt applied → when it melts, conductive brine
+    # infiltrates manholes and cable vaults causing short circuits and fires.
+    salt_melt = 0.0
+    effective_snow = total_snow + snow_rate  # accumulated + currently falling
+    if current_temp >= freezing and effective_snow > 0.5:
+        # More snow = more salt applied by road crews
+        # Saturates at 4 inches (heavy salting level)
+        snow_factor = min(1.0, effective_snow / 4.0)
+        # Warmer above freezing = faster melt dissolving more salt
+        # Saturates at 10F above freezing
+        melt_intensity = min(1.0, (current_temp - freezing) / 10.0)
+        salt_melt = snow_factor * melt_intensity * 100
+        if salt_melt > 15:
+            factors.append(
+                f"Salt-melt brine risk ({effective_snow:.1f} in snow + {current_temp - freezing:.0f}F above freezing)"
+            )
+
+    # --- Sub-score 5: Freeze-thaw cycles (10%) ---
     freeze_thaw_cycles = 0
     if len(temps) >= 4:
         above = temps[0] > freezing
@@ -158,10 +178,11 @@ def compute(
 
     # --- Weighted combination ---
     raw_score = (
-        temp_trend_score * 0.35
-        + melt_potential * 0.25
-        + rain_on_snow * 0.25
-        + ftc_score * 0.15
+        temp_trend_score * 0.30
+        + melt_potential * 0.20
+        + rain_on_snow * 0.20
+        + salt_melt * 0.20
+        + ftc_score * 0.10
     )
 
     # Apply modifiers
@@ -178,6 +199,7 @@ def compute(
         temperature_trend_f_per_hr=round(temp_trend_f_per_hr, 2),
         melt_potential=round(melt_potential, 1),
         rain_on_snow_risk=round(rain_on_snow, 1),
+        salt_melt_risk=round(salt_melt, 1),
         freeze_thaw_cycles_48h=freeze_thaw_cycles,
         contributing_factors=factors,
     )

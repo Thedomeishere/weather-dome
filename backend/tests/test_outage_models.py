@@ -209,6 +209,40 @@ def test_melt_risk_summer_zero():
     assert result.score == 0
 
 
+def test_melt_risk_salt_melt_heavy_snow():
+    """Heavy snow accumulation + above-freezing temps → salt brine infiltration."""
+    w = _make_weather(
+        temperature_f=38,  # 6F above freezing, actively melting
+        snow_rate_in_hr=3.0,  # heavy recent snow → heavy salt application
+    )
+    result = melt_risk.compute("CONED-MAN", w)
+    assert result.salt_melt_risk > 20
+    assert any("Salt-melt brine" in f for f in result.contributing_factors)
+
+
+def test_melt_risk_salt_melt_cold_no_risk():
+    """Snow below freezing → no melt → salt not dissolving → no salt-melt risk."""
+    w = _make_weather(
+        temperature_f=25,  # below freezing, no melt
+        snow_rate_in_hr=4.0,
+    )
+    result = melt_risk.compute("CONED-MAN", w)
+    assert result.salt_melt_risk == 0
+
+
+def test_melt_risk_salt_melt_manhattan_vs_rural():
+    """Manhattan (density 1.0) should have much higher salt-melt than rural O&R."""
+    w = _make_weather(
+        temperature_f=40,
+        snow_rate_in_hr=3.0,
+    )
+    man_result = melt_risk.compute("CONED-MAN", w)
+    # Same weather but rural zone
+    rural_w = _make_weather(zone_id="OR-SUL", temperature_f=40, snow_rate_in_hr=3.0)
+    rural_result = melt_risk.compute("OR-SUL", rural_w)
+    assert man_result.score > rural_result.score * 10  # Manhattan >> rural
+
+
 # --- Enhanced outage risk ---
 
 def test_outage_risk_backward_compat():
@@ -272,6 +306,12 @@ def test_coned_client_parse_summary():
     # Customers should sum to total (allowing for rounding)
     total_cust = sum(i.customers_affected for i in incidents)
     assert abs(total_cust - 2395) <= 6  # rounding tolerance
+    # Outage counts should sum to total (allowing for rounding)
+    total_outages = sum(i.outage_count for i in incidents)
+    assert abs(total_outages - 293) <= 6
+    # Manhattan (30% share) should get ~88 outages
+    man = [i for i in incidents if i.region == "Manhattan"][0]
+    assert man.outage_count == round(293 * 0.30)
 
 
 def test_coned_client_parse_summary_plain_int():
@@ -287,6 +327,8 @@ def test_coned_client_parse_summary_plain_int():
     assert len(incidents) == 6
     total_cust = sum(i.customers_affected for i in incidents)
     assert abs(total_cust - 500) <= 6
+    total_outages = sum(i.outage_count for i in incidents)
+    assert abs(total_outages - 10) <= 6
 
 
 @pytest.mark.asyncio
@@ -409,8 +451,8 @@ async def test_multi_source_ingest():
         OutageIncident(incident_id="nyc-2", source="nyc311", region="BROOKLYN"),
     ]
     coned_incidents = [
-        OutageIncident(incident_id="ce-1", source="coned", region="Manhattan", customers_affected=100),
-        OutageIncident(incident_id="ce-2", source="coned", region="Bronx", customers_affected=50),
+        OutageIncident(incident_id="ce-1", source="coned", region="Manhattan", customers_affected=100, outage_count=88),
+        OutageIncident(incident_id="ce-2", source="coned", region="Bronx", customers_affected=50, outage_count=29),
     ]
     pous_incidents = [
         OutageIncident(incident_id="po-1", source="poweroutage_us", region="Manhattan", customers_affected=200),
@@ -431,13 +473,17 @@ async def test_multi_source_ingest():
     assert "coned" in sources
     assert "poweroutage_us" in sources
     assert man.customers_affected == 300  # 0 + 100 + 200
+    # active_outages should sum outage_count: nyc311(1) + coned(88) + pous(1)
+    assert man.active_outages == 90
 
     # Brooklyn should have nyc311 incident
     bkn = _outage_cache.get("CONED-BKN")
     assert bkn is not None
     assert any(i.source == "nyc311" for i in bkn.incidents)
+    assert bkn.active_outages == 1  # just the one nyc311 complaint
 
-    # Bronx should have coned incident
+    # Bronx should have coned incident with real outage count
     brx = _outage_cache.get("CONED-BRX")
     assert brx is not None
     assert any(i.source == "coned" for i in brx.incidents)
+    assert brx.active_outages == 29  # from coned outage_count

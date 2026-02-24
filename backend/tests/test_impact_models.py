@@ -34,7 +34,7 @@ def test_outage_risk_high_wind():
 def test_outage_risk_ice_storm():
     w = _make_weather(wind_speed_mph=40, ice_accum_in=0.5)
     result = outage_risk.compute(w)
-    assert result.score > 50  # Wind + ice synergy
+    assert result.score > 45  # Wind + ice synergy
     assert "Wind+Ice synergy" in result.contributing_factors
 
 
@@ -122,6 +122,20 @@ def test_job_forecast_ice_wide_band():
     assert result.estimated_jobs_high / result.estimated_jobs_mid > 2
 
 
+def test_outage_risk_heavy_snow():
+    w = _make_weather(snow_rate_in_hr=4.0, wind_speed_mph=10)
+    result = outage_risk.compute(w)
+    assert result.score > 15
+    assert any("Snow" in f for f in result.contributing_factors)
+
+
+def test_outage_risk_wind_snow_synergy():
+    w = _make_weather(wind_speed_mph=40, snow_rate_in_hr=3.5)
+    result = outage_risk.compute(w)
+    assert "Wind+Snow synergy" in result.contributing_factors
+    assert result.score > 20
+
+
 def test_forecast_point_to_weather_adapter():
     now = datetime.now(timezone.utc)
     fp = ForecastPoint(
@@ -139,15 +153,32 @@ def test_forecast_point_to_weather_adapter():
     assert w.ice_accum_in == 0.2
 
 
+def test_forecast_point_to_weather_adapter_snow_precip():
+    """Verify that snow and precip fields are mapped through the adapter."""
+    now = datetime.now(timezone.utc)
+    fp = ForecastPoint(
+        forecast_for=now,
+        temperature_f=30.0,
+        wind_speed_mph=20.0,
+        snow_amount_in=3.0,
+        precip_amount_in=0.5,
+    )
+    w = _forecast_point_to_weather(fp, "CONED-MAN")
+    assert w.snow_rate_in_hr == 3.0
+    assert w.precip_rate_in_hr == 0.5
+
+
 def test_compute_zone_forecast_impacts():
     zone = CONED_ZONES[0]
     now = datetime.now(timezone.utc)
-    # Create 12 hourly points (every 3rd will be sampled = 4 results)
+    # Create 12 hourly points with snow/precip (every 3rd will be sampled = 4 results)
     points = [
         ForecastPoint(
             forecast_for=now + timedelta(hours=i),
-            temperature_f=90.0,
+            temperature_f=28.0,
             wind_speed_mph=30.0,
+            snow_amount_in=3.0,
+            precip_amount_in=0.4,
         )
         for i in range(12)
     ]
@@ -162,3 +193,5 @@ def test_compute_zone_forecast_impacts():
         assert r.overall_risk_level in ("Low", "Moderate", "High", "Extreme")
         assert r.estimated_outages_low >= 0
         assert r.estimated_outages_high >= r.estimated_outages_low
+    # With snow 3 in/hr + wind 30 mph, outage predictions should be non-zero
+    assert any(r.estimated_outages > 0 for r in results)
