@@ -37,11 +37,15 @@ class Settings(BaseSettings):
     coned_peak_capacity_mw: float = Field(default=13400.0)
     or_peak_capacity_mw: float = Field(default=1300.0)
 
-    # ODS (Open Data Sources) outage API
-    ods_api_url: str = Field(default="https://ods-api.m-8b1.workers.dev/incidents")
-    ods_ingest_interval: int = Field(default=10)  # minutes
+    # NYC Open Data 311 outage complaints API
+    nyc311_api_url: str = Field(default="https://data.cityofnewyork.us/resource/erm2-nwe9.json")
+    nyc_opendata_app_token: str = Field(default="")  # optional, raises rate limit
+    outage_ingest_interval: int = Field(default=10)  # minutes
 
-    # PowerOutage.us (future — requires API key)
+    # ConEd Outage Map
+    coned_outage_map_url: str = Field(default="https://outagemap.coned.com/resources/data/external/interval_generation_data")
+
+    # PowerOutage.us (optional API key; scrapes public page if no key)
     poweroutage_us_api_key: str = Field(default="")
     poweroutage_us_api_url: str = Field(default="")
 

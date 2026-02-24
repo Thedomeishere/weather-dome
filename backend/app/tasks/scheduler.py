@@ -70,7 +70,7 @@ def start_scheduler():
     _scheduler.add_job(
         _run_outage_ingest,
         "interval",
-        minutes=settings.ods_ingest_interval,
+        minutes=settings.outage_ingest_interval,
         id="outage_ingest",
         name="Outage data ingestion",
         max_instances=1,
@@ -81,7 +81,7 @@ def start_scheduler():
         "Scheduler started: weather every %d min, impact every %d min, outages every %d min",
         settings.weather_ingest_interval,
         settings.impact_compute_interval,
-        settings.ods_ingest_interval,
+        settings.outage_ingest_interval,
     )
 
 

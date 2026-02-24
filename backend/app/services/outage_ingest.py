@@ -1,5 +1,7 @@
-"""Outage data ingestion: fetches from ODS, assigns to zones, caches and persists."""
+"""Outage data ingestion: fetches from NYC 311, ConEd map, and PowerOutage.us,
+assigns to zones, caches and persists."""
 
+import asyncio
 import json
 import logging
 import math
@@ -10,13 +12,22 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models.outage import OutageSnapshot
 from app.schemas.outage import OutageIncident, ZoneOutageStatus
-from app.services import ods_client
+from app.services import coned_client, nyc311_client, poweroutage_us_client
 from app.territory.definitions import ALL_ZONES, ZoneDefinition, get_zones_for_territory
 
 logger = logging.getLogger(__name__)
 
 # In-memory cache for latest outage status per zone
 _outage_cache: dict[str, ZoneOutageStatus] = {}
+
+# NYC 311 borough field → zone_id (fast-path for exact match)
+_BOROUGH_TO_ZONE: dict[str, str] = {
+    "MANHATTAN": "CONED-MAN",
+    "BRONX": "CONED-BRX",
+    "BROOKLYN": "CONED-BKN",
+    "QUEENS": "CONED-QNS",
+    "STATEN ISLAND": "CONED-SI",
+}
 
 # County/region name aliases → zone_id mapping
 _REGION_ALIASES: dict[str, str] = {
@@ -56,9 +67,14 @@ _REGION_ALIASES: dict[str, str] = {
 
 
 def _assign_zone(incident: OutageIncident) -> str | None:
-    """Assign an incident to a zone via region name or lat/lon fallback."""
-    # Try region name matching first
+    """Assign an incident to a zone via borough, region name, or lat/lon fallback."""
     if incident.region:
+        # Fast-path: NYC 311 borough field (exact uppercase match)
+        borough_upper = incident.region.upper().strip()
+        if borough_upper in _BOROUGH_TO_ZONE:
+            return _BOROUGH_TO_ZONE[borough_upper]
+
+        # Alias-based matching
         region_lower = incident.region.lower().strip()
         # Check direct match
         if region_lower in _REGION_ALIASES:
@@ -106,11 +122,22 @@ def _nearest_zone(lat: float, lon: float, max_km: float = 50) -> str | None:
 
 
 async def ingest_outages():
-    """Main ingest: fetch ODS → assign to zones → compute trend → cache + persist."""
+    """Main ingest: fetch all sources in parallel → assign to zones → compute trend → cache + persist."""
     logger.info("Starting outage ingest")
     now = datetime.now(timezone.utc)
 
-    incidents = await ods_client.fetch_incidents()
+    results = await asyncio.gather(
+        nyc311_client.fetch_incidents(),
+        coned_client.fetch_incidents(),
+        poweroutage_us_client.fetch_incidents(),
+        return_exceptions=True,
+    )
+    incidents: list[OutageIncident] = []
+    for r in results:
+        if isinstance(r, list):
+            incidents.extend(r)
+        elif isinstance(r, Exception):
+            logger.warning("Outage source failed: %s", r)
 
     # Group incidents by zone
     zone_incidents: dict[str, list[OutageIncident]] = {z.zone_id: [] for z in ALL_ZONES}
@@ -165,9 +192,10 @@ def _persist_snapshots(snapshot_at: datetime, zone_incidents: dict[str, list[Out
     db: Session = SessionLocal()
     try:
         for zone_id, incs in zone_incidents.items():
+            sources = list({i.source for i in incs}) if incs else ["none"]
             snapshot = OutageSnapshot(
                 zone_id=zone_id,
-                source="ods",
+                source=",".join(sorted(sources)),
                 snapshot_at=snapshot_at,
                 outage_count=len(incs),
                 customers_affected=sum(i.customers_affected for i in incs),

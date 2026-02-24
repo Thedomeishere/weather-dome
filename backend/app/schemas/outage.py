@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class OutageIncident(BaseModel):
     incident_id: str
-    source: str = "ods"
+    source: str = "nyc311"
     status: str = "ongoing"
     started_at: datetime | None = None
     region: str | None = None

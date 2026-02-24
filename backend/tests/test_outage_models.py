@@ -8,7 +8,9 @@ import pytest
 from app.schemas.outage import OutageIncident, MeltRisk, ZoneOutageStatus
 from app.schemas.weather import WeatherConditions
 from app.services import melt_risk, outage_risk
-from app.services.outage_ingest import _assign_zone, _haversine_km
+from app.services.outage_ingest import _assign_zone, _BOROUGH_TO_ZONE, _haversine_km
+from app.services.coned_client import _parse_summary
+from app.services.poweroutage_us_client import _OUTAGE_PATTERN, _distribute
 
 
 def _make_weather(**kwargs) -> WeatherConditions:
@@ -21,40 +23,37 @@ def _make_weather(**kwargs) -> WeatherConditions:
     return WeatherConditions(**defaults)
 
 
-# --- ODS Client response parsing ---
+# --- NYC 311 Client response parsing ---
 
 @pytest.mark.asyncio
-async def test_ods_client_parse_response():
-    """Test ODS client parses JSON response into OutageIncident list."""
-    mock_data = [
+async def test_nyc311_client_parse_response():
+    """Test NYC 311 client parses SODA JSON response into OutageIncident list."""
+    mock_rows = [
         {
-            "id": "inc-001",
-            "kind": "power",
-            "status": "ongoing",
-            "region": "New York, New York",
-            "latitude": 40.78,
-            "longitude": -73.97,
-            "customers_affected": 150,
-            "cause": "equipment failure",
+            "unique_key": "62000001",
+            "created_date": "2026-02-24T08:30:00.000",
+            "descriptor": "Lights Flickering",
+            "borough": "MANHATTAN",
+            "incident_address": "123 BROADWAY",
+            "latitude": "40.7128",
+            "longitude": "-74.0060",
+            "status": "Open",
         },
         {
-            "id": "inc-002",
-            "kind": "power",
-            "status": "ongoing",
-            "region": "Brooklyn, New York",
-            "customers_affected": 50,
-        },
-        {
-            "id": "inc-003",
-            "kind": "water",  # filtered out
-            "status": "ongoing",
-            "region": "Queens, New York",
+            "unique_key": "62000002",
+            "created_date": "2026-02-24T09:15:00.000",
+            "descriptor": "Entire Building",
+            "borough": "BROOKLYN",
+            "incident_address": "456 ATLANTIC AVE",
+            "latitude": "40.6862",
+            "longitude": "-73.9776",
+            "status": "Open",
         },
     ]
 
-    with patch("app.services.ods_client.httpx.AsyncClient") as mock_client_cls:
+    with patch("app.services.nyc311_client.httpx.AsyncClient") as mock_client_cls:
         mock_resp = MagicMock()
-        mock_resp.json.return_value = mock_data
+        mock_resp.json.return_value = mock_rows
         mock_resp.raise_for_status = MagicMock()
 
         mock_client = AsyncMock()
@@ -63,16 +62,26 @@ async def test_ods_client_parse_response():
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client_cls.return_value = mock_client
 
-        from app.services.ods_client import fetch_incidents
+        from app.services.nyc311_client import fetch_incidents
         incidents = await fetch_incidents()
 
-        assert len(incidents) == 2  # water incident filtered
-        assert incidents[0].incident_id == "inc-001"
-        assert incidents[0].customers_affected == 150
-        assert incidents[1].incident_id == "inc-002"
+        assert len(incidents) == 2
+        assert incidents[0].incident_id == "62000001"
+        assert incidents[0].source == "nyc311"
+        assert incidents[0].region == "MANHATTAN"
+        assert incidents[0].cause == "Lights Flickering"
+        assert incidents[1].incident_id == "62000002"
+        assert incidents[1].latitude == 40.6862
 
 
 # --- Zone assignment ---
+
+def test_zone_assignment_borough_all():
+    """NYC 311 borough field maps to correct ConEd zones."""
+    for borough, expected_zone in _BOROUGH_TO_ZONE.items():
+        inc = OutageIncident(incident_id="b1", source="nyc311", region=borough)
+        assert _assign_zone(inc) == expected_zone, f"{borough} → {expected_zone}"
+
 
 def test_zone_assignment_region_manhattan():
     inc = OutageIncident(incident_id="1", region="New York, New York")
@@ -239,3 +248,196 @@ def test_outage_risk_momentum_capped():
     # Both should have same momentum since cap is 15 (reached at 150)
     # The difference should only be from the cap
     assert result_huge.score - result_moderate.score < 1  # effectively same cap
+
+
+# --- ConEd Outage Map client ---
+
+def test_coned_client_parse_summary():
+    """ConEd client parses summaryFileData and distributes across 6 zones."""
+    data = {
+        "summaryFileData": {
+            "total_outages": 293,
+            "total_cust_a": {"val": 2395},
+            "total_cust_s": 3626606,
+            "date_generated": "2026-02-24T22:21:00",
+        }
+    }
+    incidents = _parse_summary(data)
+    assert len(incidents) == 6
+    # All should be source="coned"
+    assert all(i.source == "coned" for i in incidents)
+    # Zone names should cover all ConEd zones
+    zone_names = {i.region for i in incidents}
+    assert zone_names == {"Manhattan", "Bronx", "Brooklyn", "Queens", "Staten Island", "Westchester"}
+    # Customers should sum to total (allowing for rounding)
+    total_cust = sum(i.customers_affected for i in incidents)
+    assert abs(total_cust - 2395) <= 6  # rounding tolerance
+
+
+def test_coned_client_parse_summary_plain_int():
+    """ConEd client handles total_cust_a as plain integer."""
+    data = {
+        "summaryFileData": {
+            "total_outages": 10,
+            "total_cust_a": 500,
+            "date_generated": "2026-02-24T12:00:00",
+        }
+    }
+    incidents = _parse_summary(data)
+    assert len(incidents) == 6
+    total_cust = sum(i.customers_affected for i in incidents)
+    assert abs(total_cust - 500) <= 6
+
+
+@pytest.mark.asyncio
+async def test_coned_client_fetch():
+    """ConEd client fetches metadata then data and returns incidents."""
+    meta_json = {"directory": "2026_02_24_22_21_00"}
+    data_json = {
+        "summaryFileData": {
+            "total_outages": 100,
+            "total_cust_a": {"val": 1000},
+            "total_cust_s": 3626606,
+            "date_generated": "2026-02-24T22:21:00",
+        }
+    }
+
+    mock_meta_resp = MagicMock()
+    mock_meta_resp.json.return_value = meta_json
+    mock_meta_resp.raise_for_status = MagicMock()
+
+    mock_data_resp = MagicMock()
+    mock_data_resp.json.return_value = data_json
+    mock_data_resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=[mock_meta_resp, mock_data_resp])
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.services.coned_client.httpx.AsyncClient", return_value=mock_client):
+        from app.services.coned_client import fetch_incidents
+        incidents = await fetch_incidents()
+
+    assert len(incidents) == 6
+    assert all(i.source == "coned" for i in incidents)
+
+
+# --- PowerOutage.us client ---
+
+def test_poweroutage_us_scrape_parse():
+    """Regex correctly parses 'X homes and businesses are without power'."""
+    html = """
+    <div class="report-container">
+        <h2>Con Edison</h2>
+        <p>12,345 homes and businesses are without power in the service area.</p>
+    </div>
+    """
+    match = _OUTAGE_PATTERN.search(html)
+    assert match is not None
+    assert int(match.group(1).replace(",", "")) == 12345
+
+
+def test_poweroutage_us_distribute():
+    """Distribute creates 6 ConEd zone incidents proportional to peak_load_share."""
+    incidents = _distribute(10000)
+    assert len(incidents) == 6
+    assert all(i.source == "poweroutage_us" for i in incidents)
+    # Manhattan gets 30%
+    man = [i for i in incidents if i.region == "Manhattan"][0]
+    assert man.customers_affected == 3000
+    # Total should sum to ~10000
+    total = sum(i.customers_affected for i in incidents)
+    assert abs(total - 10000) <= 6
+
+
+@pytest.mark.asyncio
+async def test_poweroutage_us_scrape_fetch():
+    """PowerOutage.us scrape mode parses HTML and returns incidents."""
+    html = '<p>5,678 homes and businesses are without power</p>'
+
+    mock_resp = MagicMock()
+    mock_resp.text = html
+    mock_resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.services.poweroutage_us_client.httpx.AsyncClient", return_value=mock_client), \
+         patch("app.services.poweroutage_us_client.settings") as mock_settings:
+        mock_settings.poweroutage_us_api_key = ""
+        mock_settings.poweroutage_us_api_url = ""
+        from app.services.poweroutage_us_client import fetch_incidents
+        incidents = await fetch_incidents()
+
+    assert len(incidents) == 6
+    total = sum(i.customers_affected for i in incidents)
+    assert abs(total - 5678) <= 6
+
+
+@pytest.mark.asyncio
+async def test_poweroutage_us_no_key_no_scrape_returns_empty():
+    """Failed scrape returns empty list gracefully."""
+    mock_resp = MagicMock()
+    mock_resp.text = "<html>No outage info here</html>"
+    mock_resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.services.poweroutage_us_client.httpx.AsyncClient", return_value=mock_client), \
+         patch("app.services.poweroutage_us_client.settings") as mock_settings:
+        mock_settings.poweroutage_us_api_key = ""
+        mock_settings.poweroutage_us_api_url = ""
+        from app.services.poweroutage_us_client import fetch_incidents
+        incidents = await fetch_incidents()
+
+    assert incidents == []
+
+
+# --- Multi-source ingest ---
+
+@pytest.mark.asyncio
+async def test_multi_source_ingest():
+    """All 3 sources merge into a single incident list assigned to zones."""
+    nyc_incidents = [
+        OutageIncident(incident_id="nyc-1", source="nyc311", region="MANHATTAN"),
+        OutageIncident(incident_id="nyc-2", source="nyc311", region="BROOKLYN"),
+    ]
+    coned_incidents = [
+        OutageIncident(incident_id="ce-1", source="coned", region="Manhattan", customers_affected=100),
+        OutageIncident(incident_id="ce-2", source="coned", region="Bronx", customers_affected=50),
+    ]
+    pous_incidents = [
+        OutageIncident(incident_id="po-1", source="poweroutage_us", region="Manhattan", customers_affected=200),
+    ]
+
+    with patch("app.services.outage_ingest.nyc311_client.fetch_incidents", new_callable=AsyncMock, return_value=nyc_incidents), \
+         patch("app.services.outage_ingest.coned_client.fetch_incidents", new_callable=AsyncMock, return_value=coned_incidents), \
+         patch("app.services.outage_ingest.poweroutage_us_client.fetch_incidents", new_callable=AsyncMock, return_value=pous_incidents), \
+         patch("app.services.outage_ingest._persist_snapshots"):
+        from app.services.outage_ingest import ingest_outages, _outage_cache
+        await ingest_outages()
+
+    # Manhattan should have incidents from all 3 sources
+    man = _outage_cache.get("CONED-MAN")
+    assert man is not None
+    sources = {i.source for i in man.incidents}
+    assert "nyc311" in sources
+    assert "coned" in sources
+    assert "poweroutage_us" in sources
+    assert man.customers_affected == 300  # 0 + 100 + 200
+
+    # Brooklyn should have nyc311 incident
+    bkn = _outage_cache.get("CONED-BKN")
+    assert bkn is not None
+    assert any(i.source == "nyc311" for i in bkn.incidents)
+
+    # Bronx should have coned incident
+    brx = _outage_cache.get("CONED-BRX")
+    assert brx is not None
+    assert any(i.source == "coned" for i in brx.incidents)
