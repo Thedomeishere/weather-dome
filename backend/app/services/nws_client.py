@@ -126,6 +126,7 @@ async def fetch_alerts(zone: ZoneDefinition) -> list[AlertSchema]:
                     instruction=p.get("instruction"),
                     onset=p.get("onset"),
                     expires=p.get("expires"),
+                    url=f.get("id"),
                 ))
             return alerts
     except Exception as e:

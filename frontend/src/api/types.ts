@@ -47,6 +47,7 @@ export interface AlertSchema {
   onset: string | null;
   expires: string | null;
   source: string;
+  url: string | null;
 }
 
 export interface OutageIncident {

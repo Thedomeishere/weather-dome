@@ -16,22 +16,37 @@ export default function AlertBanner({ alerts }: Props) {
 
   return (
     <div className="mb-6 space-y-2">
-      {alerts.map((alert) => (
-        <div
-          key={alert.alert_id}
-          className={`rounded-lg p-3 ${SEVERITY_STYLES[alert.severity] || "bg-gray-200 text-gray-800"}`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="font-semibold text-sm">
-              {alert.event} — {alert.zone_id}
+      {alerts.map((alert) => {
+        const content = (
+          <div
+            className={`rounded-lg p-3 ${SEVERITY_STYLES[alert.severity] || "bg-gray-200 text-gray-800"}`}
+          >
+            <div className="flex items-center justify-between">
+              <div className="font-semibold text-sm">
+                {alert.event} — {alert.zone_id}
+              </div>
+              <span className="text-xs opacity-80">{alert.severity}</span>
             </div>
-            <span className="text-xs opacity-80">{alert.severity}</span>
+            {alert.headline && (
+              <p className="text-sm mt-1 opacity-90">{alert.headline}</p>
+            )}
           </div>
-          {alert.headline && (
-            <p className="text-sm mt-1 opacity-90">{alert.headline}</p>
-          )}
-        </div>
-      ))}
+        );
+
+        return alert.url ? (
+          <a
+            key={alert.alert_id}
+            href={alert.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block hover:opacity-90 transition-opacity"
+          >
+            {content}
+          </a>
+        ) : (
+          <div key={alert.alert_id}>{content}</div>
+        );
+      })}
     </div>
   );
 }

@@ -61,5 +61,6 @@ class AlertSchema(BaseModel):
     onset: datetime | None = None
     expires: datetime | None = None
     source: str = "nws"
+    url: str | None = None
 
     model_config = {"from_attributes": True}
