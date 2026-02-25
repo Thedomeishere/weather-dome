@@ -39,7 +39,7 @@ export default function AlertBanner({ alerts }: Props) {
             href={alert.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="block hover:opacity-90 transition-opacity"
+            className="block hover:brightness-110 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 cursor-pointer"
           >
             {content}
           </a>
