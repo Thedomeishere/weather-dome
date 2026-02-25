@@ -10,7 +10,7 @@ from app.database import SessionLocal
 from app.models.impact import ImpactAssessment
 from app.schemas.impact import ForecastImpactPoint, ZoneImpact
 from app.schemas.weather import AlertSchema, ForecastPoint, WeatherConditions
-from app.services import outage_risk, vegetation_risk, load_forecast, equipment_stress, job_forecast, melt_risk
+from app.services import outage_risk, vegetation_risk, load_forecast, equipment_stress, job_forecast, melt_risk, snow_tracker
 from app.services.outage_ingest import get_cached_outages
 from app.services.weather_ingest import get_cached_current, get_cached_forecast, get_cached_alerts, get_recent_observations
 from app.territory.definitions import ALL_ZONES, ZoneDefinition, get_zones_for_territory
@@ -121,10 +121,15 @@ def _estimate_initial_snow_depth(
     - Condition text ("Light Snow" means snow IS on the ground)
     - Recent snowfall amounts from gridpoint data
     """
-    from app.config import settings
+    # Check snow tracker first (dynamic, auto-decaying)
+    # Use max across all zones as initial forecast depth
+    all_depths = snow_tracker.get_all_depths()
+    if all_depths:
+        max_tracked = max(all_depths.values())
+        if max_tracked > 0.1:
+            return max_tracked
 
-    # Manual override: when weather APIs don't report snowpack,
-    # the operator can set the actual snow depth in config/.env
+    from app.config import settings
     if settings.snow_depth_override_in > 0:
         return settings.snow_depth_override_in
 
@@ -332,9 +337,18 @@ def compute_zone_impact(zone: ZoneDefinition, weather: WeatherConditions) -> Zon
     # Fetch 48h observation history for melt risk model
     observations = get_recent_observations(zone.zone_id, hours=48)
 
-    # Snow depth: override takes priority, then API data, then estimation
+    # Snow depth priority: snow tracker (dynamic) > config override > API > estimation
+    tracked_depth = snow_tracker.get_snow_depth(zone.zone_id)
     from app.config import settings as _settings
-    if _settings.snow_depth_override_in > 0:
+    if tracked_depth is not None and tracked_depth > 0:
+        # Update tracker with current temp to apply melt decay
+        temp = weather.temperature_f or 32.0
+        # ~30 min between cycles
+        updated_depth = snow_tracker.update_snow_depth(zone.zone_id, temp, 0.5)
+        weather = weather.model_copy(update={"snow_depth_in": updated_depth})
+    elif _settings.snow_depth_override_in > 0:
+        # Static override — initialize the tracker with it so it starts decaying
+        snow_tracker.set_all_zones(_settings.snow_depth_override_in)
         weather = weather.model_copy(update={"snow_depth_in": _settings.snow_depth_override_in})
     elif weather.snow_depth_in is None or weather.snow_depth_in == 0:
         alerts = get_cached_alerts(zone.zone_id)
