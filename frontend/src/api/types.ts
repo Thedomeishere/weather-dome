@@ -77,6 +77,8 @@ export interface MeltRisk {
   temperature_trend_f_per_hr: number;
   melt_potential: number;
   rain_on_snow_risk: number;
+  salt_melt_risk: number;
+  snow_depth_in: number;
   freeze_thaw_cycles_48h: number;
   contributing_factors: string[];
 }
@@ -153,6 +155,9 @@ export interface ForecastImpactPoint {
   estimated_outages: number;
   estimated_outages_low: number;
   estimated_outages_high: number;
+  estimated_jobs_low: number;
+  estimated_jobs_mid: number;
+  estimated_jobs_high: number;
   vegetation_risk_score: number;
   load_pct_capacity: number;
   equipment_stress_score: number;

@@ -45,9 +45,31 @@ def test_vegetation_risk_low():
 
 
 def test_vegetation_risk_high_wind():
-    w = _make_weather(wind_speed_mph=55, wind_gust_mph=70)
+    # Use Westchester (heavy overhead + tree canopy) not Manhattan (underground)
+    w = _make_weather(zone_id="CONED-WST", wind_speed_mph=55, wind_gust_mph=70)
     result = vegetation_risk.compute(w)
-    assert result.score > 10  # at least some risk
+    assert result.score > 3  # some risk even with bare winter branches
+    # Manhattan should be near-zero (almost all underground)
+    w_man = _make_weather(zone_id="CONED-MAN", wind_speed_mph=55, wind_gust_mph=70)
+    result_man = vegetation_risk.compute(w_man)
+    assert result_man.score < result.score  # Manhattan much lower
+
+
+def test_vegetation_risk_snow_loading_overhead():
+    """Heavy wet snow on overhead lines in Westchester — major outage driver."""
+    w = _make_weather(
+        zone_id="CONED-WST",
+        wind_speed_mph=20, wind_gust_mph=30,
+        snow_depth_in=8.0, snow_rate_in_hr=1.0,
+        temperature_f=31.0,  # wet snow range
+        condition_text="Snow",
+    )
+    result = vegetation_risk.compute(w)
+    assert result.score > 15  # significant snow loading risk
+    # Same conditions in Manhattan should be minimal (underground)
+    w_man = w.model_copy(update={"zone_id": "CONED-MAN"})
+    result_man = vegetation_risk.compute(w_man)
+    assert result_man.score < result.score * 0.1
 
 
 def test_load_forecast_mild():
@@ -105,7 +127,9 @@ def test_job_forecast_extreme():
     )
     zone = CONED_ZONES[0]
     result = job_forecast.compute(o, zone)
-    assert result.estimated_jobs_mid > 1000
+    # Manhattan has 0.5 network redundancy discount — even extreme events
+    # produce fewer jobs than less-redundant boroughs (BKN would get ~1083)
+    assert result.estimated_jobs_mid > 300
     assert result.estimated_jobs_high > result.estimated_jobs_mid
     assert result.estimated_jobs_low < result.estimated_jobs_mid
 

@@ -16,6 +16,7 @@ class WeatherConditions(BaseModel):
     precip_rate_in_hr: float | None = None
     precip_probability_pct: float | None = None
     snow_rate_in_hr: float | None = None
+    snow_depth_in: float | None = None
     ice_accum_in: float | None = None
     visibility_mi: float | None = None
     cloud_cover_pct: float | None = None
@@ -34,6 +35,7 @@ class ForecastPoint(BaseModel):
     precip_probability_pct: float | None = None
     precip_amount_in: float | None = None
     snow_amount_in: float | None = None
+    snow_depth_in: float | None = None
     ice_accum_in: float | None = None
     lightning_probability_pct: float | None = None
     condition_text: str | None = None

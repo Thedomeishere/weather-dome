@@ -39,6 +39,7 @@ def aggregate_current(observations: list[WeatherConditions], zone_id: str) -> We
         precip_rate_in_hr=_safe_max([o.precip_rate_in_hr for o in valid]),
         precip_probability_pct=_safe_max([o.precip_probability_pct for o in valid]),
         snow_rate_in_hr=_safe_max([o.snow_rate_in_hr for o in valid]),
+        snow_depth_in=_safe_max([o.snow_depth_in for o in valid]),
         ice_accum_in=_safe_max([o.ice_accum_in for o in valid]),
         visibility_mi=_safe_min([o.visibility_mi for o in valid]),  # worst visibility
         cloud_cover_pct=_safe_max([o.cloud_cover_pct for o in valid]),
@@ -83,6 +84,7 @@ def aggregate_forecasts(forecasts: list[ZoneForecast], zone_id: str) -> ZoneFore
             precip_probability_pct=_safe_max([p.precip_probability_pct for p in pts]),
             precip_amount_in=_safe_max([p.precip_amount_in for p in pts]),
             snow_amount_in=_safe_max([p.snow_amount_in for p in pts]),
+            snow_depth_in=_safe_max([p.snow_depth_in for p in pts]),
             ice_accum_in=_safe_max([p.ice_accum_in for p in pts]),
             lightning_probability_pct=_safe_max([p.lightning_probability_pct for p in pts]),
             condition_text=pts[0].condition_text,

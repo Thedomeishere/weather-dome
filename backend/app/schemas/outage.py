@@ -33,5 +33,6 @@ class MeltRisk(BaseModel):
     melt_potential: float = 0.0
     rain_on_snow_risk: float = 0.0
     salt_melt_risk: float = 0.0
+    snow_depth_in: float = 0.0
     freeze_thaw_cycles_48h: int = 0
     contributing_factors: list[str] = []

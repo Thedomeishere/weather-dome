@@ -31,6 +31,11 @@ async def fetch_current(zone: ZoneDefinition) -> WeatherConditions | None:
             data = resp.json()
             current = data.get("current", {})
 
+            # OWM snow object: {"1h": mm} — convert mm to inches
+            snow_obj = current.get("snow", {})
+            snow_1h_mm = snow_obj.get("1h", 0) if isinstance(snow_obj, dict) else 0
+            snow_rate_in = round(snow_1h_mm / 25.4, 2) if snow_1h_mm else None
+
             return WeatherConditions(
                 zone_id=zone.zone_id,
                 source="owm",
@@ -41,6 +46,7 @@ async def fetch_current(zone: ZoneDefinition) -> WeatherConditions | None:
                 wind_speed_mph=current.get("wind_speed"),
                 wind_gust_mph=current.get("wind_gust"),
                 wind_direction_deg=current.get("wind_deg"),
+                snow_rate_in_hr=snow_rate_in,
                 visibility_mi=_m_to_mi(current.get("visibility")),
                 cloud_cover_pct=current.get("clouds"),
                 pressure_mb=current.get("pressure"),
@@ -72,6 +78,9 @@ async def fetch_forecast(zone: ZoneDefinition) -> ZoneForecast | None:
 
             points = []
             for h in data.get("hourly", []):
+                h_snow = h.get("snow", {})
+                h_snow_mm = h_snow.get("1h", 0) if isinstance(h_snow, dict) else 0
+                h_snow_in = round(h_snow_mm / 25.4, 2) if h_snow_mm else None
                 points.append(ForecastPoint(
                     forecast_for=datetime.fromtimestamp(h["dt"], tz=timezone.utc),
                     temperature_f=h.get("temp"),
@@ -80,6 +89,7 @@ async def fetch_forecast(zone: ZoneDefinition) -> ZoneForecast | None:
                     wind_speed_mph=h.get("wind_speed"),
                     wind_gust_mph=h.get("wind_gust"),
                     precip_probability_pct=(h.get("pop", 0) * 100),
+                    snow_amount_in=h_snow_in,
                     cloud_cover_pct=h.get("clouds"),
                     condition_text=h.get("weather", [{}])[0].get("description"),
                 ))

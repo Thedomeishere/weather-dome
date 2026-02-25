@@ -158,6 +158,7 @@ def test_melt_risk_rapid_warming_with_snow_high():
         obs = MagicMock()
         obs.temperature_f = t
         obs.snow_rate_in_hr = 0.3  # recent snow
+        obs.snow_depth_in = None
         mock_obs.append(obs)
 
     w = _make_weather(temperature_f=42, snow_rate_in_hr=0, ice_accum_in=0.1)
@@ -173,6 +174,7 @@ def test_melt_risk_rain_on_snow_high():
         obs = MagicMock()
         obs.temperature_f = 35.0
         obs.snow_rate_in_hr = 0.5
+        obs.snow_depth_in = None
         mock_obs.append(obs)
 
     w = _make_weather(
@@ -275,11 +277,11 @@ def test_outage_risk_with_outage_momentum():
 
 
 def test_outage_risk_momentum_capped():
-    """Momentum bonus capped at 15 points."""
+    """Momentum bonus capped at 25 points."""
     w = _make_weather(wind_speed_mph=30)
     result_huge = outage_risk.compute(w, current_outages=10000)
     result_moderate = outage_risk.compute(w, current_outages=200)
-    # Both should have same momentum since cap is 15 (reached at 150)
+    # Both should have same momentum since cap is 25 (reached at 125)
     # The difference should only be from the cap
     assert result_huge.score - result_moderate.score < 1  # effectively same cap
 
@@ -487,3 +489,134 @@ async def test_multi_source_ingest():
     assert brx is not None
     assert any(i.source == "coned" for i in brx.incidents)
     assert brx.active_outages == 29  # from coned outage_count
+
+
+# --- Snow depth melt risk tests ---
+
+def test_melt_risk_snow_depth_above_freezing():
+    """24 in snow depth + 38F + zero snow rate → HIGH melt risk (>50 for BKN)."""
+    w = _make_weather(
+        temperature_f=38,
+        snow_rate_in_hr=0,
+        snow_depth_in=24.0,
+        ice_accum_in=0,
+    )
+    result = melt_risk.compute("CONED-BKN", w)
+    assert result.score > 40  # Should be High, not 1%
+    assert result.level in ("Moderate", "High", "Extreme")
+    assert result.snow_depth_in == 24.0
+
+
+def test_melt_risk_snow_depth_manhattan_high():
+    """Manhattan with 24in depth + 38F → High risk (>50). Brooklyn scores higher."""
+    w = _make_weather(
+        temperature_f=38,
+        snow_rate_in_hr=0,
+        snow_depth_in=24.0,
+        ice_accum_in=0,
+    )
+    man_result = melt_risk.compute("CONED-MAN", w)
+    bkn_result = melt_risk.compute("CONED-BKN", w)
+    assert man_result.score > 50
+    assert man_result.level in ("High", "Extreme")
+    assert any("Snow cover melt" in f for f in man_result.contributing_factors)
+    # Brooklyn is more vulnerable to melt than Manhattan
+    assert bkn_result.score > man_result.score
+
+
+def test_melt_risk_snow_depth_much_higher_than_no_depth():
+    """Snow depth melt risk >> no-depth melt risk (same conditions otherwise)."""
+    w_depth = _make_weather(
+        temperature_f=38,
+        snow_rate_in_hr=0,
+        snow_depth_in=24.0,
+        ice_accum_in=0,
+    )
+    w_no_depth = _make_weather(
+        temperature_f=38,
+        snow_rate_in_hr=0,
+        snow_depth_in=0,
+        ice_accum_in=0,
+    )
+    result_depth = melt_risk.compute("CONED-BKN", w_depth)
+    result_no = melt_risk.compute("CONED-BKN", w_no_depth)
+    assert result_depth.score > result_no.score + 40  # Much higher, not marginal
+
+
+def test_melt_risk_rain_on_snow_with_depth_only():
+    """Rain-on-snow fires with snow depth alone (no snow_rate)."""
+    w = _make_weather(
+        temperature_f=38,
+        precip_rate_in_hr=0.3,
+        snow_rate_in_hr=0,
+        snow_depth_in=12.0,
+        ice_accum_in=0,
+    )
+    result = melt_risk.compute("CONED-MAN", w)
+    assert result.rain_on_snow_risk > 0
+    assert any("Rain-on-snow" in f for f in result.contributing_factors)
+
+
+def test_melt_risk_salt_melt_with_depth_only():
+    """Salt-melt fires with snow depth alone (no snow_rate)."""
+    w = _make_weather(
+        temperature_f=40,
+        snow_rate_in_hr=0,
+        snow_depth_in=18.0,
+        ice_accum_in=0,
+    )
+    result = melt_risk.compute("CONED-MAN", w)
+    assert result.salt_melt_risk > 0
+
+
+def test_melt_risk_observations_snow_depth_history():
+    """Observations with snow_depth_in history contribute to effective depth."""
+    mock_obs = []
+    for _ in range(10):
+        obs = MagicMock()
+        obs.temperature_f = 35.0
+        obs.snow_rate_in_hr = 0.0
+        obs.snow_depth_in = 20.0  # 20 inches measured over last 48h
+        mock_obs.append(obs)
+
+    # Current weather has no depth (sensor cleared), but history does
+    w = _make_weather(
+        temperature_f=38,
+        snow_rate_in_hr=0,
+        snow_depth_in=0,
+        ice_accum_in=0,
+    )
+    result = melt_risk.compute("CONED-MAN", w, observations=mock_obs)
+    assert result.score > 40  # Should be significant with 20in from history
+    assert result.snow_depth_in >= 20.0  # effective depth from history
+
+
+def test_melt_risk_snow_persistence_from_snowfall_history():
+    """Snow accumulation from snowfall rates minus melt decay gives nonzero depth."""
+    # Simulate 48h: first 24h heavy snow (below freezing), then warming above
+    mock_obs = []
+    # 96 obs at 15min intervals = 24h of heavy snow at 28F
+    for _ in range(96):
+        obs = MagicMock()
+        obs.temperature_f = 28.0  # below freezing, no melt
+        obs.snow_rate_in_hr = 2.0  # heavy snow
+        obs.snow_depth_in = None
+        mock_obs.append(obs)
+    # 48 obs at 15min intervals = 12h of above-freezing (partial melt)
+    for _ in range(48):
+        obs = MagicMock()
+        obs.temperature_f = 36.0
+        obs.snow_rate_in_hr = 0.0
+        obs.snow_depth_in = None
+        mock_obs.append(obs)
+
+    w = _make_weather(
+        temperature_f=36,
+        snow_rate_in_hr=0,
+        snow_depth_in=0,  # no API depth
+        ice_accum_in=0,
+    )
+    result = melt_risk.compute("CONED-MAN", w, observations=mock_obs)
+    # Should detect snow on ground from accumulated snowfall minus melt
+    assert result.snow_depth_in > 0
+    assert result.score > 0

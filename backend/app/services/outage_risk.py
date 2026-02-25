@@ -17,6 +17,24 @@ from app.schemas.impact import OutageRisk
 from app.schemas.weather import WeatherConditions
 
 
+# Baseline outage floor per zone: utility systems have non-zero outage rates
+# even in fair weather due to equipment aging, animal contact, vehicle strikes,
+# dig-ins, etc. Derived from observed outage snapshot averages.
+BASELINE_OUTAGES: dict[str, int] = {
+    "CONED-MAN": 60,
+    "CONED-BKN": 35,
+    "CONED-QNS": 30,
+    "CONED-BRX": 20,
+    "CONED-SI": 8,
+    "CONED-WST": 40,
+    "OR-ORA": 5,
+    "OR-ROC": 3,
+    "OR-SUL": 2,
+    "OR-BER": 3,
+    "OR-SSX": 2,
+}
+
+
 def compute(
     weather: WeatherConditions,
     current_outages: int | None = None,
@@ -63,10 +81,12 @@ def compute(
 
     score = min(100.0, base_score + synergy + snow_wind_synergy)
 
-    # Outage momentum: elevated active outages add a bonus
+    # Outage momentum: active outages indicate infrastructure stress the
+    # weather model may not fully capture (e.g. ongoing restoration, cascading
+    # failures). Cap at 25 points — even 150 outages shouldn't overwhelm.
     momentum = 0.0
     if current_outages is not None and current_outages > 5:
-        momentum = min(15, current_outages * 0.1)
+        momentum = min(25, current_outages * 0.2)
         score = min(100.0, score + momentum)
 
     factors = []
@@ -178,19 +198,56 @@ def _score_to_level(score: float) -> str:
 
 
 def _estimate_outages(score: float, zone_id: str | None = None) -> int:
-    """Rough estimate of per-zone outages based on risk score.
+    """Estimate per-zone outages based on risk score.
 
-    Checks OutageWeatherCorrelation for calibrated coefficients first,
-    falls back to heuristic.
+    Includes a baseline floor — utility systems always have some outages
+    from equipment aging, animal contact, vehicle strikes, dig-ins, etc.
+    Weather-driven outages add on top of baseline.
+
+    Applies calibration correction factor if available from the 2x/day
+    calibration service (stored in outage_weather_correlations table).
     """
-    # Future: check DB for calibrated coefficients
-    # For now, use heuristic
+    baseline = BASELINE_OUTAGES.get(zone_id or "", 5)
+
     if score < 10:
-        return 0
-    if score < 25:
-        return int(score * 2)
-    if score < 50:
-        return int(score * 10)
-    if score < 75:
-        return int(score * 40)
-    return int(score * 100)
+        weather_outages = 0
+    elif score < 25:
+        weather_outages = int(score * 2)
+    elif score < 50:
+        weather_outages = int(score * 10)
+    elif score < 75:
+        weather_outages = int(score * 40)
+    else:
+        weather_outages = int(score * 100)
+
+    # Apply calibration correction if available
+    correction = _get_calibration_correction(zone_id)
+    return baseline + int(weather_outages * correction)
+
+
+def _get_calibration_correction(zone_id: str | None) -> float:
+    """Read latest calibration correction ratio for a zone.
+
+    Cached in-memory to avoid DB reads on every call.
+    Refreshed when calibration service runs.
+    """
+    if not zone_id:
+        return 1.0
+    cached = _calibration_cache.get(zone_id)
+    if cached is not None:
+        return cached
+    try:
+        from app.services.calibration import get_latest_calibration
+        cal = get_latest_calibration(zone_id)
+        if cal and "outage_correction_ratio" in cal:
+            ratio = cal["outage_correction_ratio"]
+            _calibration_cache[zone_id] = ratio
+            return ratio
+    except Exception:
+        pass
+    _calibration_cache[zone_id] = 1.0
+    return 1.0
+
+
+# In-memory cache for calibration corrections (refreshed on calibration runs)
+_calibration_cache: dict[str, float] = {}

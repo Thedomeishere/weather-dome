@@ -80,27 +80,39 @@ def _persist(
     db: Session = SessionLocal()
     try:
         if current.observed_at:
-            obs = WeatherObservation(
-                zone_id=zone_id,
-                source=current.source,
-                observed_at=current.observed_at,
-                temperature_f=current.temperature_f,
-                feels_like_f=current.feels_like_f,
-                humidity_pct=current.humidity_pct,
-                wind_speed_mph=current.wind_speed_mph,
-                wind_gust_mph=current.wind_gust_mph,
-                wind_direction_deg=current.wind_direction_deg,
-                precip_rate_in_hr=current.precip_rate_in_hr,
-                precip_probability_pct=current.precip_probability_pct,
-                snow_rate_in_hr=current.snow_rate_in_hr,
-                ice_accum_in=current.ice_accum_in,
-                visibility_mi=current.visibility_mi,
-                cloud_cover_pct=current.cloud_cover_pct,
-                pressure_mb=current.pressure_mb,
-                lightning_probability_pct=current.lightning_probability_pct,
-                condition_text=current.condition_text,
+            # Deduplicate: skip if we already have an observation for this
+            # zone at this timestamp (prevents 48x duplicate inserts per cycle)
+            existing = (
+                db.query(WeatherObservation.id)
+                .filter(
+                    WeatherObservation.zone_id == zone_id,
+                    WeatherObservation.observed_at == current.observed_at,
+                )
+                .first()
             )
-            db.add(obs)
+            if not existing:
+                obs = WeatherObservation(
+                    zone_id=zone_id,
+                    source=current.source,
+                    observed_at=current.observed_at,
+                    temperature_f=current.temperature_f,
+                    feels_like_f=current.feels_like_f,
+                    humidity_pct=current.humidity_pct,
+                    wind_speed_mph=current.wind_speed_mph,
+                    wind_gust_mph=current.wind_gust_mph,
+                    wind_direction_deg=current.wind_direction_deg,
+                    precip_rate_in_hr=current.precip_rate_in_hr,
+                    precip_probability_pct=current.precip_probability_pct,
+                    snow_rate_in_hr=current.snow_rate_in_hr,
+                    snow_depth_in=current.snow_depth_in,
+                    ice_accum_in=current.ice_accum_in,
+                    visibility_mi=current.visibility_mi,
+                    cloud_cover_pct=current.cloud_cover_pct,
+                    pressure_mb=current.pressure_mb,
+                    lightning_probability_pct=current.lightning_probability_pct,
+                    condition_text=current.condition_text,
+                )
+                db.add(obs)
 
         now = datetime.now(timezone.utc)
         for pt in forecast.points:
@@ -115,6 +127,7 @@ def _persist(
                 precip_probability_pct=pt.precip_probability_pct,
                 precip_amount_in=pt.precip_amount_in,
                 snow_amount_in=pt.snow_amount_in,
+                snow_depth_in=pt.snow_depth_in,
                 ice_accum_in=pt.ice_accum_in,
                 lightning_probability_pct=pt.lightning_probability_pct,
                 condition_text=pt.condition_text,
@@ -143,6 +156,27 @@ def _persist(
     except Exception as e:
         db.rollback()
         logger.error("Failed to persist weather for %s: %s", zone_id, e)
+    finally:
+        db.close()
+
+
+def get_recent_observations(zone_id: str, hours: int = 48) -> list[WeatherObservation]:
+    """Query recent weather observations from SQLite for a zone."""
+    db: Session = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - __import__("datetime").timedelta(hours=hours)
+        return (
+            db.query(WeatherObservation)
+            .filter(
+                WeatherObservation.zone_id == zone_id,
+                WeatherObservation.observed_at >= cutoff,
+            )
+            .order_by(WeatherObservation.observed_at.asc())
+            .all()
+        )
+    except Exception as e:
+        logger.error("Failed to query observations for %s: %s", zone_id, e)
+        return []
     finally:
         db.close()
 

@@ -29,3 +29,21 @@ def init_db():
     import app.models.impact  # noqa: F401
     import app.models.outage  # noqa: F401
     Base.metadata.create_all(bind=engine)
+
+    # Safe migration: add missing columns to existing SQLite tables
+    if "sqlite" in settings.database_url:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            migrations = [
+                ("weather_observations", "snow_depth_in", "FLOAT"),
+                ("weather_forecasts", "snow_depth_in", "FLOAT"),
+                ("impact_assessments", "job_count_estimate", "JSON"),
+            ]
+            for table, column, col_type in migrations:
+                try:
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+                    ))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()  # column already exists

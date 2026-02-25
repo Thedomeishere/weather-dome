@@ -29,10 +29,35 @@ export default function JobCountForecastPanel({
   const zoneIds = Object.keys(forecastImpacts);
   const [selected, setSelected] = useState(zoneIds[0] ?? "");
 
-  // Territory-wide totals
-  const totalLow = jobForecast.reduce((s, j) => s + j.estimated_jobs_low, 0);
-  const totalMid = jobForecast.reduce((s, j) => s + j.estimated_jobs_mid, 0);
-  const totalHigh = jobForecast.reduce((s, j) => s + j.estimated_jobs_high, 0);
+  // Compute peak forecast jobs per zone (next 48h) for the summary table
+  const peakByZone = useMemo(() => {
+    const peaks: Record<
+      string,
+      { low: number; mid: number; high: number; peakHour: number }
+    > = {};
+    for (const [zoneId, pts] of Object.entries(forecastImpacts)) {
+      let best = { low: 0, mid: 0, high: 0, peakHour: 0 };
+      for (const p of pts) {
+        if (p.forecast_hour > 48) continue;
+        const mid = p.estimated_jobs_mid ?? p.estimated_outages ?? 0;
+        if (mid > best.mid) {
+          best = {
+            low: p.estimated_jobs_low ?? 0,
+            mid,
+            high: p.estimated_jobs_high ?? p.estimated_outages_high ?? 0,
+            peakHour: p.forecast_hour,
+          };
+        }
+      }
+      peaks[zoneId] = best;
+    }
+    return peaks;
+  }, [forecastImpacts]);
+
+  // Territory-wide totals from peak forecast (not just current snapshot)
+  const totalLow = Object.values(peakByZone).reduce((s, p) => s + p.low, 0);
+  const totalMid = Object.values(peakByZone).reduce((s, p) => s + p.mid, 0);
+  const totalHigh = Object.values(peakByZone).reduce((s, p) => s + p.high, 0);
 
   const isGroup = selected in ZONE_GROUPS;
 
@@ -47,16 +72,19 @@ export default function JobCountForecastPanel({
     >();
     for (const id of present) {
       for (const p of forecastImpacts[id]) {
+        const jLow = p.estimated_jobs_low ?? p.estimated_outages_low;
+        const jMid = p.estimated_jobs_mid ?? p.estimated_outages;
+        const jHigh = p.estimated_jobs_high ?? p.estimated_outages_high;
         const existing = byHour.get(p.forecast_hour);
         if (existing) {
-          existing.low += p.estimated_outages_low;
-          existing.mid += p.estimated_outages;
-          existing.high += p.estimated_outages_high;
+          existing.low += jLow;
+          existing.mid += jMid;
+          existing.high += jHigh;
         } else {
           byHour.set(p.forecast_hour, {
-            low: p.estimated_outages_low,
-            mid: p.estimated_outages,
-            high: p.estimated_outages_high,
+            low: jLow,
+            mid: jMid,
+            high: jHigh,
             time: new Date(p.forecast_for).toLocaleString("en-US", {
               weekday: "short",
               hour: "numeric",
@@ -184,9 +212,10 @@ export default function JobCountForecastPanel({
         </ResponsiveContainer>
       )}
 
-      {/* Per-zone table */}
-      {jobForecast.length > 0 && (
+      {/* Per-zone peak forecast table */}
+      {Object.keys(peakByZone).length > 0 && (
         <div className="overflow-x-auto mt-4">
+          <p className="text-xs text-gray-400 mb-1">Peak predicted jobs (next 48h)</p>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-gray-500 border-b">
@@ -194,27 +223,27 @@ export default function JobCountForecastPanel({
                 <th className="pb-2 text-right">Low</th>
                 <th className="pb-2 text-right">Mid</th>
                 <th className="pb-2 text-right">High</th>
-                <th className="pb-2 text-center">Risk Level</th>
+                <th className="pb-2 text-center">Peak Hr</th>
               </tr>
             </thead>
             <tbody>
-              {jobForecast.map((j) => (
-                <tr key={j.zone_id} className="border-b border-gray-50">
-                  <td className="py-2 font-medium">{j.zone_id}</td>
+              {Object.entries(peakByZone)
+                .sort(([, a], [, b]) => b.mid - a.mid)
+                .map(([zoneId, peak]) => (
+                <tr key={zoneId} className="border-b border-gray-50">
+                  <td className="py-2 font-medium">{zoneId}</td>
                   <td className="py-2 text-right">
-                    {j.estimated_jobs_low.toLocaleString()}
+                    {peak.low.toLocaleString()}
+                  </td>
+                  <td className="py-2 text-right font-semibold">
+                    {peak.mid.toLocaleString()}
                   </td>
                   <td className="py-2 text-right">
-                    {j.estimated_jobs_mid.toLocaleString()}
-                  </td>
-                  <td className="py-2 text-right">
-                    {j.estimated_jobs_high.toLocaleString()}
+                    {peak.high.toLocaleString()}
                   </td>
                   <td className="py-2 text-center">
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded font-medium ${riskBadge(j.risk_level)}`}
-                    >
-                      {j.risk_level}
+                    <span className="text-xs text-gray-500">
+                      +{peak.peakHour}h
                     </span>
                   </td>
                 </tr>
@@ -224,7 +253,7 @@ export default function JobCountForecastPanel({
         </div>
       )}
 
-      {jobForecast.length === 0 && (
+      {Object.keys(peakByZone).length === 0 && jobForecast.length === 0 && (
         <p className="text-gray-400 text-sm text-center py-4">
           No job forecast data available yet.
         </p>

@@ -12,6 +12,9 @@ class ForecastImpactPoint(BaseModel):
     estimated_outages: int = 0
     estimated_outages_low: int = 0
     estimated_outages_high: int = 0
+    estimated_jobs_low: int = 0
+    estimated_jobs_mid: int = 0
+    estimated_jobs_high: int = 0
     vegetation_risk_score: float = 0.0
     load_pct_capacity: float = 0.0
     equipment_stress_score: float = 0.0
