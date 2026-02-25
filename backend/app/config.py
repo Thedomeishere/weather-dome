@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     melt_risk_warm_threshold_f: float = Field(default=40.0)
     melt_risk_rapid_warming_rate_f_per_hr: float = Field(default=3.0)
 
+    # Snow depth override (inches). Set when weather APIs don't report
+    # snowDepth (NWS NYC stations return None). Set to 0 to disable.
+    # This overrides all automatic snow depth estimation.
+    snow_depth_override_in: float = Field(default=0.0)
+
     # CORS
     cors_origins: str = Field(default="http://localhost:5173,http://localhost:3000,https://weather.domevision.org")
 

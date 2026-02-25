@@ -115,11 +115,19 @@ def _estimate_initial_snow_depth(
     Scans the full forecast timeline for snow indicators to build the
     best estimate of existing snow cover. NWS NYC stations don't report
     snowDepth, so we combine:
+    - Config override (highest priority — user knows ground truth)
     - Explicit snow_depth_in from any forecast point
     - Alert text with snow amounts
     - Condition text ("Light Snow" means snow IS on the ground)
     - Recent snowfall amounts from gridpoint data
     """
+    from app.config import settings
+
+    # Manual override: when weather APIs don't report snowpack,
+    # the operator can set the actual snow depth in config/.env
+    if settings.snow_depth_override_in > 0:
+        return settings.snow_depth_override_in
+
     best_depth = 0.0
 
     # Check forecast points for explicit snow_depth or snow conditions
@@ -324,8 +332,11 @@ def compute_zone_impact(zone: ZoneDefinition, weather: WeatherConditions) -> Zon
     # Fetch 48h observation history for melt risk model
     observations = get_recent_observations(zone.zone_id, hours=48)
 
-    # If no snow_depth_in from weather APIs, estimate from all available signals
-    if weather.snow_depth_in is None or weather.snow_depth_in == 0:
+    # Snow depth: override takes priority, then API data, then estimation
+    from app.config import settings as _settings
+    if _settings.snow_depth_override_in > 0:
+        weather = weather.model_copy(update={"snow_depth_in": _settings.snow_depth_override_in})
+    elif weather.snow_depth_in is None or weather.snow_depth_in == 0:
         alerts = get_cached_alerts(zone.zone_id)
         alert_snow = _estimate_snow_from_alerts(alerts)
 
