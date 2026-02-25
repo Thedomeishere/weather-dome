@@ -193,6 +193,10 @@ def compute_zone_forecast_impacts(
     }
     urban_mult = _URBAN_MELT_MULTIPLIER.get(zone.zone_id, 1.5)
 
+    # Get current outage count for this zone so forecast can project restoration
+    outage_status = get_cached_outages(zone.zone_id)
+    current_outages = outage_status.active_outages if outage_status else 0
+
     base_time = points[0].forecast_for
     prev_time = base_time
     prev_temp = points[0].temperature_f or 32.0
@@ -222,8 +226,20 @@ def compute_zone_forecast_impacts(
         # Apply running snow depth estimate
         weather = weather.model_copy(update={"snow_depth_in": running_snow_depth})
 
+        # Decay current outages over the forecast horizon: outages resolve
+        # over ~24-48h as crews restore service. Half-life of ~24h means
+        # outages drop to ~50% by 24h and ~25% by 48h — realistic for
+        # underground infrastructure where restoration is slow.
+        hours_ahead = (fp.forecast_for - base_time).total_seconds() / 3600
+        decay_factor = 0.5 ** (hours_ahead / 24.0)
+        projected_outages = int(current_outages * decay_factor) if current_outages else None
+
         m_risk = melt_risk.compute(zone.zone_id, weather, observations=observations)
-        o_risk = outage_risk.compute(weather, melt_risk_score=m_risk.score)
+        o_risk = outage_risk.compute(
+            weather,
+            current_outages=projected_outages,
+            melt_risk_score=m_risk.score,
+        )
         v_risk = vegetation_risk.compute(weather)
         l_forecast_result = load_forecast.compute(weather, zone)
         e_stress = equipment_stress.compute(
@@ -248,24 +264,43 @@ def compute_zone_forecast_impacts(
             )
         overall_score = max(0, min(100, overall_score))
 
-        hours_ahead = int((fp.forecast_for - base_time).total_seconds() / 3600)
+        hours_ahead_int = int(hours_ahead)
 
         # Compute job count ranges using combined outage + melt risk.
         # Reduced melt coefficient (0.4 from 0.6) to prevent over-prediction.
         combined_score = max(o_risk.score, m_risk.score * 0.4 + o_risk.score * 0.6)
         redundancy = job_forecast.NETWORK_REDUNDANCY_DISCOUNT.get(zone.zone_id, 0.5)
-        mid_jobs = job_forecast._estimate_jobs(combined_score, redundancy)
+        weather_jobs = job_forecast._estimate_jobs(combined_score, redundancy)
         low_mult, high_mult = job_forecast._uncertainty_band(o_risk)
         # Widen uncertainty when melt is a major driver (harder to predict)
         if m_risk.score > 30:
             low_mult = min(low_mult, 0.4)
             high_mult = max(high_mult, 2.0)
+
+        # Baseline job floor: even in calm weather, baseline outages
+        # (equipment aging, animal contact, vehicle strikes, dig-ins)
+        # always generate restoration crew work. ~0.3 jobs per baseline outage.
+        # Modulate by time-of-day: crews work more during day shifts.
+        baseline = outage_risk.BASELINE_OUTAGES.get(zone.zone_id, 5)
+        hour_of_day = fp.forecast_for.hour if fp.forecast_for else 12
+        # Day shift (7am-7pm): full staffing. Night (11pm-5am): ~50%. Transition hours: ~75%.
+        if 7 <= hour_of_day < 19:
+            staffing = 1.0
+        elif 19 <= hour_of_day < 23:
+            staffing = 0.75
+        elif 5 <= hour_of_day < 7:
+            staffing = 0.75
+        else:
+            staffing = 0.5
+        baseline_jobs = int(baseline * 0.3 * staffing)
+
+        mid_jobs = max(weather_jobs, baseline_jobs)
         jobs_low = max(0, int(mid_jobs * low_mult))
         jobs_high = int(mid_jobs * high_mult)
 
         results.append(ForecastImpactPoint(
             forecast_for=fp.forecast_for,
-            forecast_hour=hours_ahead,
+            forecast_hour=hours_ahead_int,
             overall_risk_score=round(overall_score, 1),
             overall_risk_level=_score_to_level(overall_score),
             outage_risk_score=round(o_risk.score, 1),

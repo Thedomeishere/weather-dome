@@ -209,10 +209,11 @@ def _estimate_outages(score: float, zone_id: str | None = None) -> int:
     """
     baseline = BASELINE_OUTAGES.get(zone_id or "", 5)
 
-    if score < 10:
+    if score < 3:
         weather_outages = 0
     elif score < 25:
-        weather_outages = int(score * 2)
+        # Smooth ramp: avoids cliff at old threshold of 10
+        weather_outages = int((score - 3) * 1.8)
     elif score < 50:
         weather_outages = int(score * 10)
     elif score < 75:

@@ -48,7 +48,14 @@ def compute(
 
     # Apply network redundancy discount (Manhattan fewer jobs per risk unit)
     redundancy = NETWORK_REDUNDANCY_DISCOUNT.get(zone.zone_id, 0.5)
-    mid = _estimate_jobs(combined_score, redundancy)
+    weather_mid = _estimate_jobs(combined_score, redundancy)
+
+    # Baseline job floor: even in calm weather, baseline outages always
+    # generate restoration work (~0.3 jobs per baseline outage).
+    from app.services.outage_risk import BASELINE_OUTAGES
+    baseline_jobs = int(BASELINE_OUTAGES.get(zone.zone_id, 5) * 0.3)
+    mid = max(weather_mid, baseline_jobs)
+
     low_mult, high_mult = _uncertainty_band(outage_risk)
 
     # Widen uncertainty when melt is a major driver (harder to predict)
@@ -85,7 +92,7 @@ def _estimate_jobs(score: float, redundancy: float = 1.0) -> int:
     - Typical moderate event (score ~30): ~135 BKN, ~67 MAN jobs
     - Extreme event (score 85): ~1083 BKN, ~541 MAN jobs
     """
-    if score < 10:
+    if score < 3:
         return 0
 
     # Smooth quadratic: jobs = 0.15 * score^2 * redundancy
