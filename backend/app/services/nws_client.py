@@ -39,15 +39,27 @@ async def fetch_current(zone: ZoneDefinition) -> WeatherConditions | None:
             obs_resp.raise_for_status()
             obs = obs_resp.json()["properties"]
 
+            # NWS "feels like" = windChill when cold, heatIndex when hot
+            wind_chill = _c_to_f(obs.get("windChill", {}).get("value"))
+            heat_index = _c_to_f(obs.get("heatIndex", {}).get("value"))
+            temp_f = _c_to_f(obs.get("temperature", {}).get("value"))
+            feels_like = wind_chill or heat_index or temp_f
+
+            # NWS observations don't include precip probability — grab from
+            # the first hourly forecast period (same grid already resolved)
+            precip_prob = await _fetch_current_precip_prob(client, zone)
+
             return WeatherConditions(
                 zone_id=zone.zone_id,
                 source="nws",
                 observed_at=obs.get("timestamp", datetime.now(timezone.utc).isoformat()),
-                temperature_f=_c_to_f(obs.get("temperature", {}).get("value")),
+                temperature_f=temp_f,
+                feels_like_f=feels_like,
                 humidity_pct=obs.get("relativeHumidity", {}).get("value"),
                 wind_speed_mph=_kmh_to_mph(obs.get("windSpeed", {}).get("value")),
                 wind_gust_mph=_kmh_to_mph(obs.get("windGust", {}).get("value")),
                 wind_direction_deg=obs.get("windDirection", {}).get("value"),
+                precip_probability_pct=precip_prob,
                 visibility_mi=_m_to_mi(obs.get("visibility", {}).get("value")),
                 pressure_mb=_pa_to_mb(obs.get("barometricPressure", {}).get("value")),
                 snow_depth_in=_m_to_in(obs.get("snowDepth", {}).get("value")),
@@ -227,6 +239,20 @@ def _estimate_depth_from_context(
         # If NWS says snow conditions but no accumulation data,
         # there must be at least some snow on the ground
         return 2.0  # conservative minimum
+    return None
+
+
+async def _fetch_current_precip_prob(client: httpx.AsyncClient, zone: ZoneDefinition) -> float | None:
+    """Grab precip probability from the first NWS hourly forecast period."""
+    try:
+        url = f"{NWS_BASE}/gridpoints/{zone.nws_grid_office}/{zone.nws_grid_x},{zone.nws_grid_y}/forecast/hourly"
+        resp = await client.get(url)
+        resp.raise_for_status()
+        periods = resp.json()["properties"]["periods"]
+        if periods:
+            return periods[0].get("probabilityOfPrecipitation", {}).get("value")
+    except Exception:
+        pass
     return None
 
 

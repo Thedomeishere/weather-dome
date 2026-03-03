@@ -36,6 +36,10 @@ async def fetch_current(zone: ZoneDefinition) -> WeatherConditions | None:
             snow_1h_mm = snow_obj.get("1h", 0) if isinstance(snow_obj, dict) else 0
             snow_rate_in = round(snow_1h_mm / 25.4, 2) if snow_1h_mm else None
 
+            # OWM current doesn't include precip probability; use first hourly entry
+            hourly = data.get("hourly", [])
+            precip_prob = round(hourly[0].get("pop", 0) * 100) if hourly else None
+
             return WeatherConditions(
                 zone_id=zone.zone_id,
                 source="owm",
@@ -46,6 +50,7 @@ async def fetch_current(zone: ZoneDefinition) -> WeatherConditions | None:
                 wind_speed_mph=current.get("wind_speed"),
                 wind_gust_mph=current.get("wind_gust"),
                 wind_direction_deg=current.get("wind_deg"),
+                precip_probability_pct=precip_prob,
                 snow_rate_in_hr=snow_rate_in,
                 visibility_mi=_m_to_mi(current.get("visibility")),
                 cloud_cover_pct=current.get("clouds"),

@@ -45,6 +45,17 @@ def _run_outage_ingest():
         loop.close()
 
 
+def _run_treatment_ingest():
+    from app.services.salt_treatment import ingest_treatment_data
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(ingest_treatment_data())
+    except Exception as e:
+        logger.error("Treatment ingest job failed: %s", e)
+    finally:
+        loop.close()
+
+
 def start_scheduler():
     global _scheduler
     _scheduler = BackgroundScheduler()
@@ -76,12 +87,22 @@ def start_scheduler():
         max_instances=1,
     )
 
+    _scheduler.add_job(
+        _run_treatment_ingest,
+        "interval",
+        minutes=settings.treatment_ingest_interval,
+        id="treatment_ingest",
+        name="Salt/plow treatment ingestion",
+        max_instances=1,
+    )
+
     _scheduler.start()
     logger.info(
-        "Scheduler started: weather every %d min, impact every %d min, outages every %d min",
+        "Scheduler started: weather every %d min, impact every %d min, outages every %d min, treatment every %d min",
         settings.weather_ingest_interval,
         settings.impact_compute_interval,
         settings.outage_ingest_interval,
+        settings.treatment_ingest_interval,
     )
 
 

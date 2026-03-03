@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     # This overrides all automatic snow depth estimation.
     snow_depth_override_in: float = Field(default=0.0)
 
+    # Salt/plow treatment data
+    plownyc_api_url: str = Field(default="https://data.cityofnewyork.us/resource/rmhc-afj9.json")
+    dsny_salt_api_url: str = Field(default="https://data.cityofnewyork.us/resource/tavr-zknk.json")
+    ny511_api_url: str = Field(default="https://511ny.org/api/getwinterroadconditions")
+    ny511_api_key: str = Field(default="")
+    treatment_ingest_interval: int = Field(default=20)  # minutes
+
     # CORS
     cors_origins: str = Field(default="http://localhost:5173,http://localhost:3000,https://weather.domevision.org")
 

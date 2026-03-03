@@ -12,6 +12,7 @@ from app.schemas.impact import ForecastImpactPoint, ZoneImpact
 from app.schemas.weather import AlertSchema, ForecastPoint, WeatherConditions
 from app.services import outage_risk, vegetation_risk, load_forecast, equipment_stress, job_forecast, melt_risk, snow_tracker
 from app.services.outage_ingest import get_cached_outages
+from app.services.salt_treatment import get_treatment_score
 from app.services.weather_ingest import get_cached_current, get_cached_forecast, get_cached_alerts, get_recent_observations
 from app.territory.definitions import ALL_ZONES, ZoneDefinition, get_zones_for_territory
 
@@ -225,9 +226,9 @@ def compute_zone_forecast_impacts(
             if fp.snow_amount_in and fp.snow_amount_in > 0:
                 running_snow_depth += fp.snow_amount_in
             # Subtract temperature-based melt with urban acceleration
-            # Base: 0.005 in/°F/hr × urban multiplier (plowing, salt, solar)
+            # Base: 0.015 in/°F/hr × urban multiplier (plowing, salt, solar)
             if temp > effective_freezing:
-                melt_rate = (temp - effective_freezing) * 0.005 * urban_mult
+                melt_rate = (temp - effective_freezing) * 0.015 * urban_mult
                 running_snow_depth = max(0.0, running_snow_depth - melt_rate * hours_elapsed)
         prev_time = fp.forecast_for
 
@@ -340,8 +341,8 @@ def compute_zone_impact(zone: ZoneDefinition, weather: WeatherConditions) -> Zon
     # Snow depth priority: snow tracker (dynamic) > config override > API > estimation
     tracked_depth = snow_tracker.get_snow_depth(zone.zone_id)
     from app.config import settings as _settings
-    if tracked_depth is not None and tracked_depth > 0:
-        # Update tracker with current temp to apply melt decay
+    if tracked_depth is not None:
+        # Trust the tracker — even if 0.0, it means snow melted away
         temp = weather.temperature_f or 32.0
         # ~30 min between cycles
         updated_depth = snow_tracker.update_snow_depth(zone.zone_id, temp, 0.5)
@@ -364,8 +365,9 @@ def compute_zone_impact(zone: ZoneDefinition, weather: WeatherConditions) -> Zon
         if best_snow > 0:
             weather = weather.model_copy(update={"snow_depth_in": best_snow})
 
-    # Compute melt risk with observation history
-    m_risk = melt_risk.compute(zone.zone_id, weather, observations=observations)
+    # Compute melt risk with observation history + real treatment data
+    treatment = get_treatment_score(zone.zone_id)
+    m_risk = melt_risk.compute(zone.zone_id, weather, observations=observations, treatment_score=treatment)
 
     # Get live outage data for the zone
     outage_status = get_cached_outages(zone.zone_id)

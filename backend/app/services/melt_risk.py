@@ -232,6 +232,7 @@ def compute(
     zone_id: str,
     weather: WeatherConditions,
     observations: list[WeatherObservation] | None = None,
+    treatment_score: float | None = None,
 ) -> MeltRisk:
     """Compute underground melt risk for a zone.
 
@@ -239,6 +240,9 @@ def compute(
         zone_id: Zone identifier
         weather: Current weather conditions
         observations: Optional 48h historical weather observations from DB
+        treatment_score: Optional 0-1 score from real salt/plow treatment APIs.
+            Boosts or dampens the weather-inferred salt_melt sub-score.
+            None = no data, preserves existing behavior exactly.
     """
     density = UNDERGROUND_DENSITY.get(zone_id, 0.0)
     season = _seasonal_factor(weather.observed_at)
@@ -354,6 +358,33 @@ def compute(
         residual_salt = residual_salt_score * 0.6 * rain_amplifier  # cap at 80% of active
 
     salt_melt = max(snow_salt, ice_salt, residual_salt)
+
+    # --- Treatment data adjustment ---
+    # Real salt/plow API data boosts or dampens weather-inferred salt_melt.
+    # None (no data) preserves existing behavior exactly.
+    if treatment_score is not None:
+        if treatment_score > 0.5:
+            # Active treatment confirmed — boost up to +30%
+            salt_melt *= 1.0 + (treatment_score - 0.5) * 0.6
+            # If treatment detected but weather inference missed it, inject minimum
+            if salt_melt < 1.0 and snow_present:
+                salt_melt = treatment_score * 40
+                factors.append(
+                    f"Salt treatment detected without weather signal "
+                    f"(coverage {treatment_score * 100:.0f}%)"
+                )
+            else:
+                factors.append(
+                    f"Confirmed salt treatment (coverage {treatment_score * 100:.0f}%)"
+                )
+        elif treatment_score >= 0.1:
+            # Some treatment activity — modest boost up to +10%
+            salt_melt *= 1.0 + treatment_score * 0.2
+        elif treatment_score == 0.0:
+            # No treatment despite conditions — dampen by 15%
+            salt_melt *= 0.85
+    salt_melt = min(100.0, salt_melt)
+
     if salt_melt > 15:
         if ice_salt >= snow_salt and ice_salt >= residual_salt:
             factors.append(
