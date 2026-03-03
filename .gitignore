@@ -17,3 +17,5 @@ frontend/dist/
 *.tsbuildinfo
 .DS_Store
 *.log
+.claude/
+backend/snow_state.json
