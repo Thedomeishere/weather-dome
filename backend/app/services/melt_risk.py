@@ -6,12 +6,22 @@ peaking Feb-Mar). Uses 48h weather history to detect dangerous melt conditions.
 Six sub-scores:
 - Snow cover melt (35%): Snow on ground + above-freezing temps = active melt
   infiltrating underground infrastructure. Primary driver.
-- Salt-melt contamination (25%): Road salt + melting snow creates conductive brine
-  that infiltrates manholes/vaults causing short circuits and fires
+- Salt-melt contamination (25%): Road salt creates conductive brine that
+  infiltrates manholes/vaults causing short circuits and fires. Three pathways:
+  (a) snow-based salt (existing), (b) ice-based salt (freezing rain/sleet),
+  (c) residual salt from prior treatment (decays over 48h).
 - Melt potential (15%): Temperature above freezing × snow depth interaction
-- Rain-on-snow (10%): Active precipitation accelerating melt when snow present
+- Rain-on-snow / rain infiltration (10%): Precipitation accelerating melt or
+  causing drainage problems. Two pathways: (a) rain-on-snow (existing),
+  (b) rain-on-frozen-ground (prolonged cold impairs drainage, salt residue
+  washes into manholes as conductive brine).
 - Temperature trend (10%): Rate of warming from <32F to >40F
 - Freeze-thaw cycling (5%): Count of 32F crossings in 48h
+
+Additive bonuses:
+- Rapid warming premium (0-25): Fast warming with snow present
+- Cold-rain transition bonus (0-20): Rain after prolonged freeze, amplified
+  by residual salt (triple threat: cold ground + rain + salt brine)
 
 Modifiers: underground density * seasonal factor
 """
@@ -132,6 +142,92 @@ def _estimate_snow_on_ground(
     return accumulated
 
 
+_ICE_KEYWORDS = ("freezing rain", "ice", "sleet", "ice pellets", "glaze")
+
+
+def _analyze_salt_history(
+    observations: list[WeatherObservation],
+    freezing: float,
+) -> tuple[float, float]:
+    """Scan 48h observations for ice events and salt-application conditions.
+
+    Returns:
+        (ice_hours_ago, residual_salt_score):
+        - ice_hours_ago: hours since last ice condition (inf if none)
+        - residual_salt_score: 0-100, full strength 0-24h, linear decay to 0 at 48h
+    """
+    if not observations:
+        return float("inf"), 0.0
+
+    last_ice_idx: int | None = None
+    for i in range(len(observations) - 1, -1, -1):
+        obs = observations[i]
+        # Ice event: ice accumulation or icy condition text
+        # Use try/except for robustness with mock objects in tests
+        try:
+            ice_accum = float(obs.ice_accum_in or 0)
+        except (TypeError, ValueError):
+            ice_accum = 0.0
+        try:
+            cond = str(obs.condition_text or "").lower()
+        except (TypeError, ValueError):
+            cond = ""
+        try:
+            temp = float(obs.temperature_f) if obs.temperature_f is not None else 50.0
+        except (TypeError, ValueError):
+            temp = 50.0
+
+        is_ice_event = ice_accum > 0 or any(kw in cond for kw in _ICE_KEYWORDS)
+        # Salt is also applied for snow/ice when temp is in treatment range (15-freezing)
+        try:
+            snow_rate = float(obs.snow_rate_in_hr or 0)
+        except (TypeError, ValueError):
+            snow_rate = 0.0
+        is_salt_condition = (15.0 <= temp <= freezing) and (snow_rate > 0 or is_ice_event)
+
+        if is_ice_event or is_salt_condition:
+            last_ice_idx = i
+            break
+
+    if last_ice_idx is None:
+        return float("inf"), 0.0
+
+    # Approximate hours ago: each observation ~15min apart
+    obs_since = len(observations) - 1 - last_ice_idx
+    ice_hours_ago = obs_since * 0.25
+
+    # Residual salt score: full strength 0-24h, linear decay to 0 at 48h
+    if ice_hours_ago <= 24.0:
+        residual_salt_score = 100.0
+    elif ice_hours_ago <= 48.0:
+        residual_salt_score = 100.0 * (1.0 - (ice_hours_ago - 24.0) / 24.0)
+    else:
+        residual_salt_score = 0.0
+
+    return ice_hours_ago, residual_salt_score
+
+
+def _analyze_cold_stretch(
+    temps: list[float],
+    freezing: float,
+) -> tuple[int, bool]:
+    """Count below-freezing hours in the temperature list.
+
+    Returns:
+        (cold_hours, ground_frozen):
+        - cold_hours: number of hours below freezing (temps are ~15min intervals)
+        - ground_frozen: True when cold_hours >= 24
+    """
+    if not temps:
+        return 0, False
+
+    below_freezing_intervals = sum(1 for t in temps if t < freezing)
+    cold_hours = int(below_freezing_intervals * 0.25)  # ~15min intervals
+    ground_frozen = cold_hours >= 24
+
+    return cold_hours, ground_frozen
+
+
 def compute(
     zone_id: str,
     weather: WeatherConditions,
@@ -176,6 +272,10 @@ def compute(
                 max_obs_snow_depth = max(max_obs_snow_depth, obs.snow_depth_in)
     # Always include current temp
     temps.append(current_temp)
+
+    # Analyze salt treatment history and cold stretch for enhanced sub-scores
+    ice_hours_ago, residual_salt_score = _analyze_salt_history(observations or [], freezing)
+    cold_hours, ground_frozen = _analyze_cold_stretch(temps, freezing)
 
     # Snow persistence estimate from accumulation minus melt decay
     estimated_ground_snow = _estimate_snow_on_ground(observations or [], freezing, zone_id)
@@ -226,17 +326,46 @@ def compute(
             )
 
     # --- Sub-score 2: Salt-melt contamination (25%) ---
-    # Heavy snow → more road salt applied → when it melts, conductive brine
-    # infiltrates manholes and cable vaults causing short circuits and fires.
+    # Three pathways: (a) snow-based salt, (b) ice-based salt, (c) residual salt.
+    # Score = max of all three pathways.
     salt_melt = 0.0
     effective_snow_for_salt = max(effective_snow_depth, total_snow + snow_rate)
+
+    # (a) Snow-based salt — existing logic: heavy snow → road salt applied
+    snow_salt = 0.0
     if current_temp >= freezing and effective_snow_for_salt > 0.5:
-        # More snow = more salt applied by road crews; saturates at 6 inches
         snow_factor = min(1.0, effective_snow_for_salt / 6.0)
-        # Warmer above freezing = faster melt dissolving more salt; saturates at 8F
         melt_intensity = min(1.0, (current_temp - freezing) / 8.0)
-        salt_melt = snow_factor * melt_intensity * 100
-        if salt_melt > 15:
+        snow_salt = snow_factor * melt_intensity * 100
+
+    # (b) Ice-based salt — freezing rain/sleet/ice triggers salt application
+    ice_salt = 0.0
+    is_ice_condition = ice_accum > 0 or any(kw in condition_text for kw in _ICE_KEYWORDS)
+    recent_ice = ice_hours_ago < 12.0
+    if current_temp >= freezing and (is_ice_condition or recent_ice):
+        ice_factor = min(1.0, max(ice_accum, 0.1) / 0.5)  # saturates at 0.5" ice
+        melt_intensity = min(1.0, (current_temp - freezing) / 8.0)
+        ice_salt = ice_factor * melt_intensity * 100
+
+    # (c) Residual salt — salt persists 24-48h after application, dissolves when warm
+    residual_salt = 0.0
+    if residual_salt_score > 0 and current_temp >= freezing:
+        rain_amplifier = 1.0 + min(1.0, precip_rate / 0.3)  # rain washes salt into manholes
+        residual_salt = residual_salt_score * 0.6 * rain_amplifier  # cap at 80% of active
+
+    salt_melt = max(snow_salt, ice_salt, residual_salt)
+    if salt_melt > 15:
+        if ice_salt >= snow_salt and ice_salt >= residual_salt:
+            factors.append(
+                f"Salt-melt brine from ice treatment ({ice_accum:.2f} in ice, "
+                f"{current_temp - freezing:.0f}F above freezing)"
+            )
+        elif residual_salt >= snow_salt:
+            factors.append(
+                f"Residual salt dissolving ({ice_hours_ago:.0f}h since treatment, "
+                f"strength {residual_salt_score:.0f}%)"
+            )
+        else:
             factors.append(
                 f"Salt-melt brine risk ({effective_snow_for_salt:.1f} in snow + "
                 f"{current_temp - freezing:.0f}F above freezing)"
@@ -250,14 +379,35 @@ def compute(
         melt_potential = (temp_factor * 0.5 + snow_factor * 0.5) * 100
         factors.append(f"Active snowmelt conditions ({effective_snow_depth:.1f} in snow on ground)")
 
-    # --- Sub-score 4: Rain-on-snow (10%) ---
-    rain_on_snow = 0.0
+    # --- Sub-score 4: Rain infiltration (10%) ---
+    # Two pathways: (a) rain-on-snow, (b) rain-on-frozen-ground
+    rain_infiltration = 0.0
+
+    # (a) Rain-on-snow — existing logic
+    rain_on_snow_component = 0.0
     if precip_rate > 0 and snow_present and current_temp > freezing:
         precip_factor = min(1.0, precip_rate / 0.5)  # saturates at 0.5 in/hr
-        # Deeper snow pack = more melt volume when rain hits it
         depth_factor = min(1.0, effective_snow_depth / 6.0) if effective_snow_depth > 0 else 0.3
-        rain_on_snow = precip_factor * (0.5 + 0.5 * depth_factor) * 100
-        factors.append("Rain-on-snow accelerating melt")
+        rain_on_snow_component = precip_factor * (0.5 + 0.5 * depth_factor) * 100
+
+    # (b) Rain-on-frozen-ground — prolonged cold impairs drainage
+    frozen_ground_component = 0.0
+    if precip_rate > 0 and current_temp > freezing and ground_frozen:
+        precip_factor = min(1.0, precip_rate / 0.5)
+        freeze_severity = min(1.0, cold_hours / 48.0)
+        frozen_ground_component = precip_factor * freeze_severity * 100
+        # Amplify if residual salt present (brine washes into manholes)
+        if residual_salt_score > 30:
+            frozen_ground_component = min(100.0, frozen_ground_component * 1.3)
+
+    rain_infiltration = max(rain_on_snow_component, frozen_ground_component)
+    if rain_infiltration > 0:
+        if rain_on_snow_component >= frozen_ground_component:
+            factors.append("Rain-on-snow accelerating melt")
+        else:
+            factors.append(
+                f"Rain on frozen ground ({cold_hours}h below freezing, impaired drainage)"
+            )
 
     # --- Sub-score 5: Temperature trend (10%) ---
     temp_trend_f_per_hr = 0.0
@@ -304,15 +454,30 @@ def compute(
         if rapid_warming_bonus > 5:
             factors.append(f"Rapid warming premium (+{rapid_warming_bonus:.0f}%)")
 
+    # --- Cold-rain transition bonus (0-20 additive) ---
+    # Rain after prolonged freeze: frozen ground prevents drainage,
+    # salt residue washes into manholes as conductive brine.
+    cold_rain_bonus = 0.0
+    if ground_frozen and precip_rate > 0 and current_temp > freezing:
+        freeze_duration_factor = min(1.0, cold_hours / 48.0)
+        rain_factor = min(1.0, precip_rate / 0.3)
+        cold_rain_bonus = freeze_duration_factor * rain_factor * 20.0
+        # Triple threat amplifier: cold ground + rain + residual salt
+        if residual_salt_score > 30:
+            cold_rain_bonus = min(20.0, cold_rain_bonus * 1.4)
+        cold_rain_bonus = min(20.0, cold_rain_bonus)
+        if cold_rain_bonus > 3:
+            factors.append(f"Cold-rain transition ({cold_hours}h frozen \u2192 rain, +{cold_rain_bonus:.0f}%)")
+
     # --- Weighted combination ---
     raw_score = (
         snow_cover_melt * 0.35
         + salt_melt * 0.25
         + melt_potential * 0.15
-        + rain_on_snow * 0.10
+        + rain_infiltration * 0.10
         + temp_trend_score * 0.10
         + ftc_score * 0.05
-    ) + rapid_warming_bonus
+    ) + rapid_warming_bonus + cold_rain_bonus
 
     # Apply modifiers
     final_score = raw_score * density * season
@@ -329,7 +494,7 @@ def compute(
         level=_score_to_level(final_score),
         temperature_trend_f_per_hr=round(temp_trend_f_per_hr, 2),
         melt_potential=round(melt_potential, 1),
-        rain_on_snow_risk=round(rain_on_snow, 1),
+        rain_on_snow_risk=round(rain_infiltration, 1),
         salt_melt_risk=round(salt_melt, 1),
         snow_depth_in=round(effective_snow_depth, 1),
         freeze_thaw_cycles_48h=freeze_thaw_cycles,

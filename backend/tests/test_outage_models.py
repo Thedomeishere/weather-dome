@@ -620,3 +620,214 @@ def test_melt_risk_snow_persistence_from_snowfall_history():
     # Should detect snow on ground from accumulated snowfall minus melt
     assert result.snow_depth_in > 0
     assert result.score > 0
+
+
+# --- Enhanced melt risk: salt on ice, frozen ground, cold-rain ---
+
+def test_melt_risk_salt_on_ice_no_snow():
+    """Ice (freezing rain) with no snow still triggers salt-melt via ice pathway."""
+    w = _make_weather(
+        temperature_f=34,  # just above Manhattan effective freezing (25F)
+        snow_rate_in_hr=0,
+        snow_depth_in=0,
+        ice_accum_in=0.15,  # freezing rain accumulation
+        condition_text="Freezing Rain",
+    )
+    result = melt_risk.compute("CONED-MAN", w)
+    assert result.salt_melt_risk > 0, "Ice accumulation should trigger salt-melt"
+
+
+def test_melt_risk_residual_salt_from_ice_history():
+    """Ice event 12h ago, now warming → residual salt dissolving."""
+    # 48 obs at 15min = 12h, all cold with ice event at start
+    mock_obs = []
+    # First observation: ice event
+    obs = MagicMock()
+    obs.temperature_f = 28.0
+    obs.snow_rate_in_hr = 0.0
+    obs.snow_depth_in = None
+    obs.ice_accum_in = 0.2
+    obs.condition_text = "Freezing Rain"
+    mock_obs.append(obs)
+    # Remaining 47 obs: cold, no ice
+    for _ in range(47):
+        obs = MagicMock()
+        obs.temperature_f = 30.0
+        obs.snow_rate_in_hr = 0.0
+        obs.snow_depth_in = None
+        obs.ice_accum_in = 0.0
+        obs.condition_text = "Cloudy"
+        mock_obs.append(obs)
+
+    w = _make_weather(
+        temperature_f=36,  # above freezing, salt dissolving
+        snow_rate_in_hr=0,
+        snow_depth_in=0,
+        ice_accum_in=0,
+    )
+    result = melt_risk.compute("CONED-MAN", w, observations=mock_obs)
+    assert result.salt_melt_risk > 0, "Residual salt from ice history should score"
+    factors_text = " ".join(result.contributing_factors).lower()
+    assert "residual" in factors_text or "salt" in factors_text
+
+
+def test_melt_risk_rain_on_frozen_ground_no_snow():
+    """Rain after 48h of cold (20F) with no snow → frozen ground drainage impairment."""
+    # 192 obs at 15min = 48h, all at 20F
+    mock_obs = []
+    for _ in range(192):
+        obs = MagicMock()
+        obs.temperature_f = 20.0
+        obs.snow_rate_in_hr = 0.0
+        obs.snow_depth_in = None
+        obs.ice_accum_in = 0.0
+        obs.condition_text = "Clear"
+        mock_obs.append(obs)
+
+    w = _make_weather(
+        temperature_f=38,  # now above freezing
+        precip_rate_in_hr=0.3,  # rain
+        snow_rate_in_hr=0,
+        snow_depth_in=0,
+        ice_accum_in=0,
+    )
+    result = melt_risk.compute("CONED-MAN", w, observations=mock_obs)
+    assert result.rain_on_snow_risk > 0, "Rain on frozen ground should score"
+    factors_text = " ".join(result.contributing_factors).lower()
+    assert "frozen ground" in factors_text
+
+
+def test_melt_risk_cold_rain_transition_bonus():
+    """48h frozen + rain → cold-rain transition bonus fires and increases score."""
+    mock_obs = []
+    for _ in range(192):
+        obs = MagicMock()
+        obs.temperature_f = 20.0
+        obs.snow_rate_in_hr = 0.0
+        obs.snow_depth_in = None
+        obs.ice_accum_in = 0.0
+        obs.condition_text = "Clear"
+        mock_obs.append(obs)
+
+    # With rain
+    w_rain = _make_weather(
+        temperature_f=38,
+        precip_rate_in_hr=0.3,
+        snow_rate_in_hr=0,
+        snow_depth_in=0,
+        ice_accum_in=0,
+    )
+    result_rain = melt_risk.compute("CONED-MAN", w_rain, observations=mock_obs)
+
+    # Without rain (same cold history)
+    w_no_rain = _make_weather(
+        temperature_f=38,
+        precip_rate_in_hr=0,
+        snow_rate_in_hr=0,
+        snow_depth_in=0,
+        ice_accum_in=0,
+    )
+    result_no_rain = melt_risk.compute("CONED-MAN", w_no_rain, observations=mock_obs)
+
+    assert result_rain.score > result_no_rain.score, "Rain after cold should score higher"
+    factors_text = " ".join(result_rain.contributing_factors)
+    assert "Cold-rain transition" in factors_text
+
+
+def test_melt_risk_salt_on_sleet_condition():
+    """Sleet condition text triggers ice-based salt pathway."""
+    w = _make_weather(
+        temperature_f=33,  # above Manhattan effective freezing (25F)
+        snow_rate_in_hr=0,
+        snow_depth_in=0,
+        ice_accum_in=0,
+        condition_text="Sleet",
+    )
+    result = melt_risk.compute("CONED-MAN", w)
+    assert result.salt_melt_risk > 0, "Sleet condition should trigger salt-melt"
+
+
+def test_melt_risk_triple_threat():
+    """Ice history + frozen ground + current rain → multiple enhanced pathways fire."""
+    mock_obs = []
+    # First 96 obs (24h): cold with ice event
+    obs = MagicMock()
+    obs.temperature_f = 22.0
+    obs.snow_rate_in_hr = 0.0
+    obs.snow_depth_in = None
+    obs.ice_accum_in = 0.3
+    obs.condition_text = "Ice Pellets"
+    mock_obs.append(obs)
+    for _ in range(95):
+        obs = MagicMock()
+        obs.temperature_f = 22.0
+        obs.snow_rate_in_hr = 0.0
+        obs.snow_depth_in = None
+        obs.ice_accum_in = 0.0
+        obs.condition_text = "Clear"
+        mock_obs.append(obs)
+    # Next 96 obs (24h): still cold
+    for _ in range(96):
+        obs = MagicMock()
+        obs.temperature_f = 24.0
+        obs.snow_rate_in_hr = 0.0
+        obs.snow_depth_in = None
+        obs.ice_accum_in = 0.0
+        obs.condition_text = "Cloudy"
+        mock_obs.append(obs)
+
+    w = _make_weather(
+        temperature_f=36,
+        precip_rate_in_hr=0.25,
+        snow_rate_in_hr=0,
+        snow_depth_in=0,
+        ice_accum_in=0,
+    )
+    result = melt_risk.compute("CONED-MAN", w, observations=mock_obs)
+    factors_text = " ".join(result.contributing_factors).lower()
+    # At least 2 of the 3 enhanced pathways should fire
+    hits = sum([
+        "salt" in factors_text or "residual" in factors_text,
+        "frozen ground" in factors_text,
+        "cold-rain transition" in factors_text,
+    ])
+    assert hits >= 2, f"Expected >=2 enhanced pathways, got {hits}. Factors: {result.contributing_factors}"
+
+
+def test_melt_risk_rain_on_snow_still_works():
+    """Classic rain + snow_depth + above freezing still produces rain-on-snow factor (backward compat)."""
+    w = _make_weather(
+        temperature_f=38,
+        precip_rate_in_hr=0.3,
+        snow_rate_in_hr=0,
+        snow_depth_in=12.0,
+        ice_accum_in=0,
+    )
+    result = melt_risk.compute("CONED-MAN", w)
+    assert result.rain_on_snow_risk > 0
+    assert any("Rain-on-snow" in f for f in result.contributing_factors)
+
+
+def test_melt_risk_rain_warm_history_no_frozen_ground():
+    """Warm history (45F) + rain should NOT trigger frozen ground or cold-rain."""
+    mock_obs = []
+    for _ in range(192):
+        obs = MagicMock()
+        obs.temperature_f = 45.0
+        obs.snow_rate_in_hr = 0.0
+        obs.snow_depth_in = None
+        obs.ice_accum_in = 0.0
+        obs.condition_text = "Cloudy"
+        mock_obs.append(obs)
+
+    w = _make_weather(
+        temperature_f=48,
+        precip_rate_in_hr=0.3,
+        snow_rate_in_hr=0,
+        snow_depth_in=0,
+        ice_accum_in=0,
+    )
+    result = melt_risk.compute("CONED-MAN", w, observations=mock_obs)
+    factors_text = " ".join(result.contributing_factors).lower()
+    assert "frozen ground" not in factors_text, "Warm history should not trigger frozen ground"
+    assert "cold-rain" not in factors_text, "Warm history should not trigger cold-rain"
