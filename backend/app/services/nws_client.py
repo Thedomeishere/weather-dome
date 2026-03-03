@@ -45,9 +45,10 @@ async def fetch_current(zone: ZoneDefinition) -> WeatherConditions | None:
             temp_f = _c_to_f(obs.get("temperature", {}).get("value"))
             feels_like = wind_chill or heat_index or temp_f
 
-            # NWS observations don't include precip probability — grab from
-            # the first hourly forecast period (same grid already resolved)
-            precip_prob = await _fetch_current_precip_prob(client, zone)
+            # NWS observations lack precip rate, snow rate, ice, and precip
+            # probability. Supplement from the first hourly forecast period
+            # and the raw gridpoint quantitative fields.
+            forecast_supplement = await _fetch_forecast_supplement(client, zone)
 
             return WeatherConditions(
                 zone_id=zone.zone_id,
@@ -59,7 +60,10 @@ async def fetch_current(zone: ZoneDefinition) -> WeatherConditions | None:
                 wind_speed_mph=_kmh_to_mph(obs.get("windSpeed", {}).get("value")),
                 wind_gust_mph=_kmh_to_mph(obs.get("windGust", {}).get("value")),
                 wind_direction_deg=obs.get("windDirection", {}).get("value"),
-                precip_probability_pct=precip_prob,
+                precip_probability_pct=forecast_supplement.get("precip_probability_pct"),
+                precip_rate_in_hr=forecast_supplement.get("precip_rate_in_hr"),
+                snow_rate_in_hr=forecast_supplement.get("snow_rate_in_hr"),
+                ice_accum_in=forecast_supplement.get("ice_accum_in"),
                 visibility_mi=_m_to_mi(obs.get("visibility", {}).get("value")),
                 pressure_mb=_pa_to_mb(obs.get("barometricPressure", {}).get("value")),
                 snow_depth_in=_m_to_in(obs.get("snowDepth", {}).get("value")),
@@ -242,17 +246,77 @@ def _estimate_depth_from_context(
     return None
 
 
-async def _fetch_current_precip_prob(client: httpx.AsyncClient, zone: ZoneDefinition) -> float | None:
-    """Grab precip probability from the first NWS hourly forecast period."""
+async def _fetch_forecast_supplement(client: httpx.AsyncClient, zone: ZoneDefinition) -> dict:
+    """Supplement NWS obs with quantitative fields from forecast/gridpoint data.
+
+    NWS observations don't include precip rate, snow rate, ice accumulation,
+    or precip probability. We pull these from:
+    - Hourly forecast: precip probability, condition text
+    - Raw gridpoint: quantitativePrecipitation, snowfallAmount, iceAccumulation
+    """
+    result: dict = {}
+    grid_prefix = f"{NWS_BASE}/gridpoints/{zone.nws_grid_office}/{zone.nws_grid_x},{zone.nws_grid_y}"
+
     try:
-        url = f"{NWS_BASE}/gridpoints/{zone.nws_grid_office}/{zone.nws_grid_x},{zone.nws_grid_y}/forecast/hourly"
-        resp = await client.get(url)
+        # Hourly forecast — precip probability
+        resp = await client.get(f"{grid_prefix}/forecast/hourly")
         resp.raise_for_status()
         periods = resp.json()["properties"]["periods"]
         if periods:
-            return periods[0].get("probabilityOfPrecipitation", {}).get("value")
+            p = periods[0]
+            result["precip_probability_pct"] = p.get("probabilityOfPrecipitation", {}).get("value")
     except Exception:
         pass
+
+    try:
+        # Raw gridpoint — quantitative precip, snowfall, ice
+        resp = await client.get(grid_prefix)
+        resp.raise_for_status()
+        props = resp.json().get("properties", {})
+        now = datetime.now(timezone.utc)
+
+        precip_rate = _lookup_gridpoint_value(props.get("quantitativePrecipitation", {}), now)
+        if precip_rate is not None:
+            # NWS gives mm for the period; convert to in/hr
+            result["precip_rate_in_hr"] = round(precip_rate / 25.4, 3)
+
+        snow_rate = _lookup_gridpoint_value(props.get("snowfallAmount", {}), now)
+        if snow_rate is not None:
+            # NWS gives mm; convert to in/hr
+            result["snow_rate_in_hr"] = round(snow_rate / 25.4, 3)
+
+        ice_val = _lookup_gridpoint_value(props.get("iceAccumulation", {}), now)
+        if ice_val is not None:
+            result["ice_accum_in"] = round(ice_val / 25.4, 3)
+    except Exception:
+        pass
+
+    return result
+
+
+def _lookup_gridpoint_value(field_data: dict, target_time: datetime) -> float | None:
+    """Find the value for the current time in an NWS gridpoint time-series field.
+
+    NWS gridpoint fields use ISO 8601 intervals like:
+    "validTime": "2026-03-03T12:00:00+00:00/PT3H", "value": 0.25
+    """
+    from datetime import timedelta
+    values = field_data.get("values", [])
+    for v in values:
+        valid_time = v.get("validTime", "")
+        raw_val = v.get("value")
+        if raw_val is None or "/" not in valid_time:
+            continue
+        try:
+            time_str, duration_str = valid_time.split("/", 1)
+            start = datetime.fromisoformat(time_str)
+            hours = _parse_iso_duration_hours(duration_str)
+            end = start + timedelta(hours=hours)
+            if start <= target_time < end:
+                # Convert total-for-period to per-hour rate
+                return raw_val / max(hours, 1) if raw_val > 0 else 0.0
+        except Exception:
+            continue
     return None
 
 
