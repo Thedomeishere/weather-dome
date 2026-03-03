@@ -124,8 +124,9 @@ def update_snow_depth(zone_id: str, temp_f: float, hours_elapsed: float) -> floa
     urban_mult = _URBAN_MELT_MULT.get(zone_id, 1.5)
 
     if temp_f > threshold and hours_elapsed > 0:
-        # Base melt: 0.005 in/°F/hr × urban multiplier
-        melt_rate = (temp_f - threshold) * 0.005 * urban_mult
+        # Base melt: 0.015 in/°F/hr × urban multiplier
+        # Accounts for solar radiation, rain washoff, and street activity
+        melt_rate = (temp_f - threshold) * 0.015 * urban_mult
         melted = melt_rate * hours_elapsed
         depth = max(0.0, depth - melted)
 

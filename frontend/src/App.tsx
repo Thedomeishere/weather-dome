@@ -4,6 +4,7 @@ import TerritoryMap from "./components/map/TerritoryMap";
 import WeatherPanel from "./components/weather/WeatherPanel";
 import AlertBanner from "./components/weather/AlertBanner";
 import ForecastTimeline from "./components/weather/ForecastTimeline";
+import FiveDayForecast from "./components/weather/FiveDayForecast";
 import OutageRiskCard from "./components/impact/OutageRiskCard";
 import VegetationRiskCard from "./components/impact/VegetationRiskCard";
 import LoadForecastCard from "./components/impact/LoadForecastCard";
@@ -118,6 +119,9 @@ function App() {
                 <WeatherPanel weather={data.current_weather} />
               </div>
             </div>
+
+            {/* 5-Day Forecast */}
+            <FiveDayForecast points={data.forecast_timeline} />
 
             {/* Impact Cards */}
             <h2 className="text-lg font-semibold text-gray-800 mb-3">
