@@ -71,26 +71,27 @@ export default function FiveDayForecast({ points }: { points: ForecastPoint[] })
 
   return (
     <div className="mb-6">
-      <h2 className="text-lg font-semibold text-gray-800 mb-3">5-Day Forecast</h2>
+      <h2 className="text-lg font-semibold text-slate-200 mb-3">5-Day Forecast</h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-        {days.map((day) => (
+        {days.map((day, i) => (
           <div
             key={day.date}
-            className="bg-white rounded-lg shadow p-4 text-center"
+            className="bg-slate-800/80 border border-slate-700/50 rounded-lg shadow-lg shadow-black/20 p-4 text-center hover:border-slate-600 transition-colors animate-fade-in-up"
+            style={{ animationDelay: `${i * 60}ms` }}
           >
-            <div className="text-sm font-semibold text-gray-700">{day.dayName}</div>
-            <div className="text-xs text-gray-400 mb-2">{day.date}</div>
+            <div className="text-sm font-semibold text-slate-300">{day.dayName}</div>
+            <div className="text-xs text-slate-500 mb-2">{day.date}</div>
             <div className="text-3xl mb-2">{weatherIcon(day.condition)}</div>
-            <div className="text-xs text-gray-500 mb-2 h-8 flex items-center justify-center">
+            <div className="text-xs text-slate-400 mb-2 h-8 flex items-center justify-center">
               {day.condition ?? "N/A"}
             </div>
-            <div className="text-lg font-bold text-gray-800">
+            <div className="text-lg font-bold text-slate-200">
               {day.highTemp !== null ? `${day.highTemp}\u00B0` : "--"}
-              <span className="text-sm font-normal text-gray-400 ml-1">
+              <span className="text-sm font-normal text-slate-500 ml-1">
                 {day.lowTemp !== null ? `${day.lowTemp}\u00B0` : "--"}
               </span>
             </div>
-            <div className="mt-2 flex justify-center gap-3 text-xs text-gray-500">
+            <div className="mt-2 flex justify-center gap-3 text-xs text-slate-400">
               {day.maxWind !== null && (
                 <span title="Max wind speed">{day.maxWind} mph</span>
               )}

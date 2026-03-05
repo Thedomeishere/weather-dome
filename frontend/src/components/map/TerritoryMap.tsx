@@ -30,15 +30,15 @@ const ZONE_COORDS: Record<string, [number, number]> = {
 function riskColor(level: string): string {
   switch (level) {
     case "Low":
-      return "#22c55e";
+      return "#4ade80";
     case "Moderate":
-      return "#eab308";
+      return "#facc15";
     case "High":
-      return "#f97316";
+      return "#fb923c";
     case "Extreme":
-      return "#ef4444";
+      return "#f87171";
     default:
-      return "#9ca3af";
+      return "#94a3b8";
   }
 }
 
@@ -52,7 +52,7 @@ export default function TerritoryMap({ zones, territory }: Props) {
   const zoom = TERRITORY_ZOOM[territory] || 10;
 
   return (
-    <div className="bg-white rounded-lg shadow overflow-hidden" style={{ height: 420 }}>
+    <div className="bg-slate-800/80 border border-slate-700/50 rounded-lg shadow-lg shadow-black/20 overflow-hidden hover:border-slate-600 transition-colors" style={{ height: 420 }}>
       <MapContainer
         center={center}
         zoom={zoom}
@@ -60,8 +60,8 @@ export default function TerritoryMap({ zones, territory }: Props) {
         key={territory}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
         {zones.map((zone) => {
           const coords = ZONE_COORDS[zone.zone_id];
@@ -73,7 +73,7 @@ export default function TerritoryMap({ zones, territory }: Props) {
               radius={18}
               pathOptions={{
                 fillColor: riskColor(zone.overall_risk_level),
-                fillOpacity: 0.7,
+                fillOpacity: 0.8,
                 color: riskColor(zone.overall_risk_level),
                 weight: 2,
               }}

@@ -46,37 +46,40 @@ export default function ForecastTimeline({ points, forecastImpacts }: Props) {
   });
 
   return (
-    <div className="bg-white rounded-lg shadow p-4">
-      <h3 className="text-sm font-semibold text-gray-700 mb-3">
+    <div className="bg-slate-800/80 border border-slate-700/50 rounded-lg shadow-lg shadow-black/20 p-4 hover:border-slate-600 transition-colors">
+      <h3 className="text-sm font-semibold text-slate-300 mb-3">
         5-Day Forecast Timeline
       </h3>
       {chartData.length === 0 ? (
-        <p className="text-gray-400 text-sm py-8 text-center">
+        <p className="text-slate-500 text-sm py-8 text-center">
           No forecast data available yet.
         </p>
       ) : (
         <ResponsiveContainer width="100%" height={250}>
           <ComposedChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
             <XAxis
               dataKey="time"
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 10, fill: "#94a3b8" }}
               interval={11}
+              stroke="#475569"
             />
             <YAxis
               yAxisId="left"
-              tick={{ fontSize: 10 }}
-              label={{ value: "°F / mph", angle: -90, position: "insideLeft", fontSize: 10 }}
+              tick={{ fontSize: 10, fill: "#94a3b8" }}
+              stroke="#475569"
+              label={{ value: "°F / mph", angle: -90, position: "insideLeft", fontSize: 10, fill: "#94a3b8" }}
             />
             <YAxis
               yAxisId="right"
               orientation="right"
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 10, fill: "#94a3b8" }}
+              stroke="#475569"
               domain={[0, 100]}
-              label={{ value: "Risk / Precip %", angle: 90, position: "insideRight", fontSize: 10 }}
+              label={{ value: "Risk / Precip %", angle: 90, position: "insideRight", fontSize: 10, fill: "#94a3b8" }}
             />
             <Tooltip />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Legend wrapperStyle={{ fontSize: 11, color: "#94a3b8" }} />
             <Area
               yAxisId="right"
               type="monotone"

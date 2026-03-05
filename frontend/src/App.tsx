@@ -19,24 +19,24 @@ function App() {
   const { data, isLoading, error } = useDashboard(territory);
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-slate-950 text-gray-100">
       {/* Header */}
-      <header className="bg-gray-900 text-white px-6 py-4 shadow-lg">
+      <header className="bg-slate-900/80 backdrop-blur-sm text-white px-6 py-4 shadow-lg border-b border-slate-800">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Weather-Dome</h1>
-            <p className="text-gray-400 text-sm">
+            <p className="text-slate-400 text-sm">
               Weather Impact Prediction Dashboard
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex bg-gray-800 rounded-lg p-1">
+            <div className="flex bg-slate-800 rounded-lg p-1">
               <button
                 onClick={() => setTerritory("CONED")}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   territory === "CONED"
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-400 hover:text-white"
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                    : "text-slate-400 hover:text-white"
                 }`}
               >
                 Con Edison
@@ -45,15 +45,15 @@ function App() {
                 onClick={() => setTerritory("OR")}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   territory === "OR"
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-400 hover:text-white"
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
+                    : "text-slate-400 hover:text-white"
                 }`}
               >
                 O&R
               </button>
             </div>
             {data && (
-              <div className="text-sm text-gray-400">
+              <div className="text-sm text-slate-400">
                 Updated: {new Date(data.as_of).toLocaleTimeString()}
               </div>
             )}
@@ -64,12 +64,12 @@ function App() {
       <main className="max-w-7xl mx-auto px-6 py-6">
         {/* Loading / Error states */}
         {isLoading && (
-          <div className="text-center py-20 text-gray-500">
+          <div className="text-center py-20 text-slate-500">
             Loading dashboard data...
           </div>
         )}
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6">
+          <div className="bg-red-950/50 border border-red-800/50 text-red-400 p-4 rounded-lg mb-6">
             Failed to load dashboard. The backend may not be running.
           </div>
         )}
@@ -87,26 +87,31 @@ function App() {
                 label="Overall Risk"
                 value={data.overview.overall_risk_level}
                 color={riskColor(data.overview.overall_risk_level)}
+                index={0}
               />
               <OverviewCard
                 label="Active Alerts"
                 value={data.overview.active_alert_count.toString()}
-                color={data.overview.active_alert_count > 0 ? "text-orange-600" : "text-green-600"}
+                color={data.overview.active_alert_count > 0 ? "text-orange-400" : "text-emerald-400"}
+                index={1}
               />
               <OverviewCard
                 label="Est. Outages"
                 value={data.overview.total_estimated_outages.toLocaleString()}
-                color={data.overview.total_estimated_outages > 100 ? "text-red-600" : "text-green-600"}
+                color={data.overview.total_estimated_outages > 100 ? "text-red-400" : "text-emerald-400"}
+                index={2}
               />
               <OverviewCard
                 label="Active Outages"
                 value={data.overview.total_actual_outages.toLocaleString()}
-                color={data.overview.total_actual_outages > 0 ? "text-red-600" : "text-green-600"}
+                color={data.overview.total_actual_outages > 0 ? "text-red-400" : "text-emerald-400"}
+                index={3}
               />
               <OverviewCard
                 label="Peak Load"
                 value={`${data.overview.peak_load_pct}%`}
-                color={data.overview.peak_load_pct > 85 ? "text-red-600" : "text-green-600"}
+                color={data.overview.peak_load_pct > 85 ? "text-red-400" : "text-emerald-400"}
+                index={4}
               />
             </div>
 
@@ -124,15 +129,25 @@ function App() {
             <FiveDayForecast points={data.forecast_timeline} />
 
             {/* Impact Cards */}
-            <h2 className="text-lg font-semibold text-gray-800 mb-3">
+            <h2 className="text-lg font-semibold text-slate-200 mb-3">
               Impact Assessment
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-              <OutageRiskCard zones={data.zones} />
-              <VegetationRiskCard zones={data.zones} />
-              <LoadForecastCard zones={data.zones} />
-              <EquipmentStressCard zones={data.zones} />
-              <MeltRiskCard zones={data.zones} />
+              {[
+                <OutageRiskCard key="outage" zones={data.zones} />,
+                <VegetationRiskCard key="veg" zones={data.zones} />,
+                <LoadForecastCard key="load" zones={data.zones} />,
+                <EquipmentStressCard key="equip" zones={data.zones} />,
+                <MeltRiskCard key="melt" zones={data.zones} />,
+              ].map((card, i) => (
+                <div
+                  key={i}
+                  className="animate-fade-in-up"
+                  style={{ animationDelay: `${i * 60}ms` }}
+                >
+                  {card}
+                </div>
+              ))}
             </div>
 
             {/* Real-Time Outage Card */}
@@ -173,14 +188,19 @@ function OverviewCard({
   label,
   value,
   color,
+  index,
 }: {
   label: string;
   value: string;
   color: string;
+  index: number;
 }) {
   return (
-    <div className="bg-white rounded-lg shadow p-4">
-      <div className="text-sm text-gray-500">{label}</div>
+    <div
+      className="bg-slate-800/80 border border-slate-700/50 rounded-lg shadow-lg shadow-black/20 p-4 hover:border-slate-600 transition-colors animate-fade-in-up"
+      style={{ animationDelay: `${index * 60}ms` }}
+    >
+      <div className="text-sm text-slate-400">{label}</div>
       <div className={`text-2xl font-bold ${color}`}>{value}</div>
     </div>
   );
@@ -189,15 +209,15 @@ function OverviewCard({
 function riskColor(level: string): string {
   switch (level) {
     case "Low":
-      return "text-green-600";
+      return "text-emerald-400";
     case "Moderate":
-      return "text-yellow-600";
+      return "text-yellow-400";
     case "High":
-      return "text-orange-600";
+      return "text-orange-400";
     case "Extreme":
-      return "text-red-600";
+      return "text-red-400";
     default:
-      return "text-gray-600";
+      return "text-slate-400";
   }
 }
 

@@ -5,10 +5,10 @@ interface Props {
 }
 
 const SEVERITY_STYLES: Record<string, string> = {
-  Extreme: "bg-red-600 text-white",
-  Severe: "bg-orange-500 text-white",
-  Moderate: "bg-yellow-400 text-gray-900",
-  Minor: "bg-blue-100 text-blue-800",
+  Extreme: "bg-red-900/80 text-red-100 animate-pulse-glow",
+  Severe: "bg-orange-900/70 text-orange-100 animate-pulse-glow-orange",
+  Moderate: "bg-yellow-900/60 text-yellow-100",
+  Minor: "bg-blue-900/50 text-blue-100",
 };
 
 export default function AlertBanner({ alerts }: Props) {
@@ -19,7 +19,7 @@ export default function AlertBanner({ alerts }: Props) {
       {alerts.map((alert) => {
         const content = (
           <div
-            className={`rounded-lg p-3 ${SEVERITY_STYLES[alert.severity] || "bg-gray-200 text-gray-800"}`}
+            className={`rounded-lg p-3 border border-slate-700/50 ${SEVERITY_STYLES[alert.severity] || "bg-slate-800 text-slate-200"}`}
           >
             <div className="flex items-center justify-between">
               <div className="font-semibold text-sm">

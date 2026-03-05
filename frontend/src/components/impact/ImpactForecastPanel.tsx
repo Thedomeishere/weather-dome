@@ -112,11 +112,11 @@ export default function ImpactForecastPanel({ forecastImpacts }: Props) {
 
   if (zoneIds.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow p-4">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">
+      <div className="bg-slate-800/80 border border-slate-700/50 rounded-lg shadow-lg shadow-black/20 p-4">
+        <h3 className="text-sm font-semibold text-slate-300 mb-3">
           Impact Forecast
         </h3>
-        <p className="text-gray-400 text-sm py-8 text-center">
+        <p className="text-slate-500 text-sm py-8 text-center">
           No forecast impact data available yet.
         </p>
       </div>
@@ -124,15 +124,15 @@ export default function ImpactForecastPanel({ forecastImpacts }: Props) {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow p-4">
+    <div className="bg-slate-800/80 border border-slate-700/50 rounded-lg shadow-lg shadow-black/20 p-4 hover:border-slate-600 transition-colors">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-700">
+        <h3 className="text-sm font-semibold text-slate-300">
           5-Day Impact Forecast
         </h3>
         <select
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
-          className="text-sm border border-gray-300 rounded px-2 py-1"
+          className="text-sm bg-slate-900 border border-slate-600 text-slate-200 rounded px-2 py-1"
         >
           {zoneIds.map((id) => (
             <option key={id} value={id}>
@@ -150,7 +150,7 @@ export default function ImpactForecastPanel({ forecastImpacts }: Props) {
       </div>
 
       {peakRisk && (
-        <p className="text-xs text-gray-500 mb-2">
+        <p className="text-xs text-slate-500 mb-2">
           Peak risk:{" "}
           <span className={`font-semibold ${riskColor(peakRisk.overall_risk_level)}`}>
             {peakRisk.overall_risk_level} ({peakRisk.overall_risk_score})
@@ -171,21 +171,22 @@ export default function ImpactForecastPanel({ forecastImpacts }: Props) {
       <ResponsiveContainer width="100%" height={280}>
         <ComposedChart data={chartData}>
           {/* Risk band backgrounds */}
-          <ReferenceArea yAxisId="left" y1={0} y2={25} fill="#22c55e" fillOpacity={0.07} />
-          <ReferenceArea yAxisId="left" y1={25} y2={50} fill="#eab308" fillOpacity={0.07} />
-          <ReferenceArea yAxisId="left" y1={50} y2={75} fill="#f97316" fillOpacity={0.07} />
-          <ReferenceArea yAxisId="left" y1={75} y2={100} fill="#ef4444" fillOpacity={0.07} />
+          <ReferenceArea yAxisId="left" y1={0} y2={25} fill="#22c55e" fillOpacity={0.12} />
+          <ReferenceArea yAxisId="left" y1={25} y2={50} fill="#eab308" fillOpacity={0.12} />
+          <ReferenceArea yAxisId="left" y1={50} y2={75} fill="#f97316" fillOpacity={0.12} />
+          <ReferenceArea yAxisId="left" y1={75} y2={100} fill="#ef4444" fillOpacity={0.12} />
 
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="time" tick={{ fontSize: 10 }} interval={3} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <XAxis dataKey="time" tick={{ fontSize: 10, fill: "#94a3b8" }} interval={3} stroke="#475569" />
           <YAxis
             yAxisId="left"
-            tick={{ fontSize: 10 }}
+            tick={{ fontSize: 10, fill: "#94a3b8" }}
+            stroke="#475569"
             domain={[0, 100]}
-            label={{ value: "Score / %", angle: -90, position: "insideLeft", fontSize: 10 }}
+            label={{ value: "Score / %", angle: -90, position: "insideLeft", fontSize: 10, fill: "#94a3b8" }}
           />
           <Tooltip />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Legend wrapperStyle={{ fontSize: 11, color: "#94a3b8" }} />
           <Line
             yAxisId="left"
             type="monotone"
@@ -243,14 +244,14 @@ export default function ImpactForecastPanel({ forecastImpacts }: Props) {
 function riskColor(level: string): string {
   switch (level) {
     case "Low":
-      return "text-green-600";
+      return "text-emerald-400";
     case "Moderate":
-      return "text-yellow-600";
+      return "text-yellow-400";
     case "High":
-      return "text-orange-600";
+      return "text-orange-400";
     case "Extreme":
-      return "text-red-600";
+      return "text-red-400";
     default:
-      return "text-gray-600";
+      return "text-slate-400";
   }
 }
