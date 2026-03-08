@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { DashboardResponse, ZoneInfo } from "./types";
+import type { DashboardResponse, OutageOverride, OutageOverrideRequest, ZoneInfo } from "./types";
 
 const api = axios.create({
   baseURL: "/api/v1",
@@ -22,6 +22,20 @@ export async function fetchZones(
     params: territory ? { territory } : {},
   });
   return data;
+}
+
+export async function fetchOutageOverrides(): Promise<OutageOverride[]> {
+  const { data } = await api.get<OutageOverride[]>("/outages/overrides");
+  return data;
+}
+
+export async function setOutageOverride(req: OutageOverrideRequest): Promise<OutageOverride> {
+  const { data } = await api.post<OutageOverride>("/outages/override", req);
+  return data;
+}
+
+export async function clearOutageOverride(zoneId: string): Promise<void> {
+  await api.delete(`/outages/override/${zoneId}`);
 }
 
 export default api;

@@ -202,3 +202,17 @@ export interface ZoneInfo {
   longitude: number;
   nws_zone: string;
 }
+
+export interface OutageOverride {
+  zone_id: string;
+  active_outages: number;
+  customers_affected: number;
+  expires_at: string;
+}
+
+export interface OutageOverrideRequest {
+  zone_id: string;
+  active_outages: number;
+  customers_affected: number;
+  ttl_minutes: number;
+}

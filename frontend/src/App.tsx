@@ -13,9 +13,11 @@ import MeltRiskCard from "./components/impact/MeltRiskCard";
 import RealTimeOutageCard from "./components/impact/RealTimeOutageCard";
 import ImpactForecastPanel from "./components/impact/ImpactForecastPanel";
 import JobCountForecastPanel from "./components/impact/JobCountForecastPanel";
+import OutageOverridePanel from "./components/admin/OutageOverridePanel";
 
 function App() {
   const [territory, setTerritory] = useState<"CONED" | "OR">("CONED");
+  const [showAdmin, setShowAdmin] = useState(false);
   const { data, isLoading, error } = useDashboard(territory);
 
   return (
@@ -52,6 +54,16 @@ function App() {
                 O&R
               </button>
             </div>
+            <button
+              onClick={() => setShowAdmin((v) => !v)}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                showAdmin
+                  ? "bg-amber-600 text-white shadow-lg shadow-amber-600/30"
+                  : "bg-slate-800 text-slate-400 hover:text-white"
+              }`}
+            >
+              Admin
+            </button>
             {data && (
               <div className="text-sm text-slate-400">
                 Updated: {new Date(data.as_of).toLocaleTimeString()}
@@ -79,6 +91,14 @@ function App() {
             {/* Alerts */}
             {data.alerts.length > 0 && (
               <AlertBanner alerts={data.alerts} />
+            )}
+
+            {/* Admin Panel */}
+            {showAdmin && (
+              <OutageOverridePanel
+                outageStatus={data.outage_status}
+                territory={territory}
+              />
             )}
 
             {/* Overview Cards */}
