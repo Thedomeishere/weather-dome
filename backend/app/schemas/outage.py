@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class OutageIncident(BaseModel):
@@ -23,6 +23,20 @@ class ZoneOutageStatus(BaseModel):
     customers_affected: int = 0
     trend: str = "stable"  # rising, falling, stable
     incidents: list[OutageIncident] = []
+
+
+class OutageOverrideRequest(BaseModel):
+    zone_id: str
+    active_outages: int
+    customers_affected: int
+    ttl_minutes: int = Field(default=120, ge=1, le=1440)
+
+
+class OutageOverrideResponse(BaseModel):
+    zone_id: str
+    active_outages: int
+    customers_affected: int
+    expires_at: datetime
 
 
 class MeltRisk(BaseModel):

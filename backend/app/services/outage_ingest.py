@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 # In-memory cache for latest outage status per zone
 _outage_cache: dict[str, ZoneOutageStatus] = {}
+
+# Manual override cache: zone_id -> (ZoneOutageStatus, expires_at)
+_override_cache: dict[str, tuple[ZoneOutageStatus, datetime]] = {}
 
 # NYC 311 borough field → zone_id (fast-path for exact match)
 _BOROUGH_TO_ZONE: dict[str, str] = {
@@ -179,6 +182,19 @@ async def ingest_outages():
             trend=trend,
             incidents=zone_incs,
         )
+
+        # Apply manual override if active
+        override = _override_cache.get(zid)
+        if override is not None:
+            override_status, expires_at = override
+            if now < expires_at:
+                logger.info("Applying manual override for %s (expires %s)", zid, expires_at.isoformat())
+                status.active_outages = override_status.active_outages
+                status.customers_affected = override_status.customers_affected
+            else:
+                # Expired, clean up
+                del _override_cache[zid]
+
         _outage_cache[zid] = status
 
     # Persist snapshots
@@ -222,3 +238,65 @@ def get_all_cached_outages() -> list[ZoneOutageStatus]:
 def get_territory_outages(territory: str) -> list[ZoneOutageStatus]:
     zones = get_zones_for_territory(territory)
     return [_outage_cache[z.zone_id] for z in zones if z.zone_id in _outage_cache]
+
+
+def set_outage_override(
+    zone_id: str,
+    active_outages: int,
+    customers_affected: int,
+    ttl_minutes: int = 120,
+) -> datetime:
+    """Store a manual outage override for a zone. Returns expiry timestamp."""
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(minutes=ttl_minutes)
+
+    override_status = ZoneOutageStatus(
+        zone_id=zone_id,
+        as_of=now,
+        active_outages=active_outages,
+        customers_affected=customers_affected,
+        trend="stable",
+    )
+    _override_cache[zone_id] = (override_status, expires_at)
+
+    # Also apply immediately to live cache if present
+    if zone_id in _outage_cache:
+        cached = _outage_cache[zone_id]
+        cached.active_outages = active_outages
+        cached.customers_affected = customers_affected
+        cached.as_of = now
+
+    logger.info(
+        "Override set for %s: %d outages, %d customers, expires %s",
+        zone_id, active_outages, customers_affected, expires_at.isoformat(),
+    )
+    return expires_at
+
+
+def clear_outage_override(zone_id: str) -> bool:
+    """Remove a manual outage override. Returns True if one existed."""
+    removed = _override_cache.pop(zone_id, None) is not None
+    if removed:
+        logger.info("Override cleared for %s", zone_id)
+    return removed
+
+
+def get_active_overrides() -> list[dict]:
+    """Return all active (non-expired) overrides."""
+    now = datetime.now(timezone.utc)
+    active = []
+    expired_keys = []
+    for zone_id, (status, expires_at) in _override_cache.items():
+        if now < expires_at:
+            active.append({
+                "zone_id": zone_id,
+                "active_outages": status.active_outages,
+                "customers_affected": status.customers_affected,
+                "expires_at": expires_at,
+            })
+        else:
+            expired_keys.append(zone_id)
+    # Clean up expired
+    for key in expired_keys:
+        del _override_cache[key]
+    return active

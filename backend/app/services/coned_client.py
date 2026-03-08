@@ -12,13 +12,25 @@ import httpx
 
 from app.config import settings
 from app.schemas.outage import OutageIncident
+from app.services.coned_scraper import fetch_borough_outages
 from app.territory.definitions import CONED_ZONES
 
 logger = logging.getLogger(__name__)
 
 
 async def fetch_incidents() -> list[OutageIncident]:
-    """Fetch ConEd outage map data and distribute across zones."""
+    """Fetch ConEd outage data, preferring per-borough scraper over proportional distribution."""
+    # Try per-borough scraper first
+    try:
+        borough_data = await fetch_borough_outages()
+        if borough_data:
+            logger.info("ConEd: using per-borough scraper data (%d entries)", len(borough_data))
+            return borough_data
+    except Exception as e:
+        logger.warning("ConEd scraper attempt failed: %s", e)
+
+    # Fall back to proportional distribution from summary API
+    logger.info("ConEd: falling back to proportional distribution from summary API")
     base_url = settings.coned_outage_map_url
     try:
         async with httpx.AsyncClient(timeout=15) as client:

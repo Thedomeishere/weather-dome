@@ -1,15 +1,22 @@
 """Tests for outage ingestion, zone mapping, melt risk model, and enhanced outage risk."""
 
-from datetime import datetime, timezone
+import asyncio
+import json
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from app.schemas.outage import OutageIncident, MeltRisk, ZoneOutageStatus
+from app.schemas.outage import OutageIncident, MeltRisk, ZoneOutageStatus, OutageOverrideRequest, OutageOverrideResponse
 from app.schemas.weather import WeatherConditions
 from app.services import melt_risk, outage_risk
-from app.services.outage_ingest import _assign_zone, _BOROUGH_TO_ZONE, _haversine_km
+from app.services.outage_ingest import (
+    _assign_zone, _BOROUGH_TO_ZONE, _haversine_km,
+    set_outage_override, clear_outage_override, get_active_overrides,
+    _override_cache, _outage_cache,
+)
 from app.services.coned_client import _parse_summary
+from app.services.coned_scraper import _map_area_to_zone, fetch_borough_outages
 from app.services.poweroutage_us_client import _OUTAGE_PATTERN, _distribute
 
 
@@ -831,3 +838,232 @@ def test_melt_risk_rain_warm_history_no_frozen_ground():
     factors_text = " ".join(result.contributing_factors).lower()
     assert "frozen ground" not in factors_text, "Warm history should not trigger frozen ground"
     assert "cold-rain" not in factors_text, "Warm history should not trigger cold-rain"
+
+
+# --- ConEd per-borough scraper ---
+
+def test_scraper_map_area_to_zone():
+    """Borough display names map to correct zone IDs."""
+    assert _map_area_to_zone("Brooklyn") == "CONED-BKN"
+    assert _map_area_to_zone("Manhattan") == "CONED-MAN"
+    assert _map_area_to_zone("Bronx") == "CONED-BRX"
+    assert _map_area_to_zone("Queens") == "CONED-QNS"
+    assert _map_area_to_zone("Staten Island") == "CONED-SI"
+    assert _map_area_to_zone("Westchester") == "CONED-WST"
+    assert _map_area_to_zone("Unknown Area") is None
+
+
+def test_scraper_map_area_case_insensitive():
+    """Area mapping is case-insensitive."""
+    assert _map_area_to_zone("BROOKLYN") == "CONED-BKN"
+    assert _map_area_to_zone("brooklyn") == "CONED-BKN"
+    assert _map_area_to_zone("  Manhattan  ") == "CONED-MAN"
+
+
+@pytest.mark.asyncio
+async def test_scraper_parses_json_output():
+    """Scraper wrapper parses node script JSON output into OutageIncident list."""
+    scraper_output = json.dumps([
+        {"area": "Brooklyn", "outages": 20, "customers": 43},
+        {"area": "Queens", "outages": 15, "customers": 30},
+        {"area": "Manhattan", "outages": 5, "customers": 12},
+    ])
+
+    mock_proc = AsyncMock()
+    mock_proc.communicate = AsyncMock(return_value=(scraper_output.encode(), b""))
+    mock_proc.returncode = 0
+
+    with patch("app.services.coned_scraper.asyncio.create_subprocess_exec", return_value=mock_proc), \
+         patch("app.services.coned_scraper._scraper_cache", None):
+        import app.services.coned_scraper as scraper_mod
+        scraper_mod._scraper_cache = None
+        incidents = await fetch_borough_outages()
+
+    assert len(incidents) == 3
+    bkn = [i for i in incidents if "Brooklyn" in (i.region or "")][0]
+    assert bkn.outage_count == 20
+    assert bkn.customers_affected == 43
+    assert bkn.source == "coned"
+
+    qns = [i for i in incidents if "Queens" in (i.region or "")][0]
+    assert qns.outage_count == 15
+    assert qns.customers_affected == 30
+
+
+@pytest.mark.asyncio
+async def test_scraper_returns_empty_on_failure():
+    """Scraper returns empty list when node script fails."""
+    mock_proc = AsyncMock()
+    mock_proc.communicate = AsyncMock(return_value=(b"", b"Error"))
+    mock_proc.returncode = 1
+
+    with patch("app.services.coned_scraper.asyncio.create_subprocess_exec", return_value=mock_proc):
+        import app.services.coned_scraper as scraper_mod
+        scraper_mod._scraper_cache = None
+        incidents = await fetch_borough_outages()
+
+    assert incidents == []
+
+
+@pytest.mark.asyncio
+async def test_scraper_returns_empty_on_timeout():
+    """Scraper returns empty list on timeout."""
+    mock_proc = AsyncMock()
+    mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
+
+    with patch("app.services.coned_scraper.asyncio.create_subprocess_exec", return_value=mock_proc):
+        import app.services.coned_scraper as scraper_mod
+        scraper_mod._scraper_cache = None
+        incidents = await fetch_borough_outages()
+
+    assert incidents == []
+
+
+@pytest.mark.asyncio
+async def test_coned_client_prefers_scraper():
+    """ConEd client uses scraper data when available."""
+    scraper_incidents = [
+        OutageIncident(incident_id="scrape-1", source="coned", region="Brooklyn",
+                      customers_affected=43, outage_count=20),
+    ]
+
+    with patch("app.services.coned_client.fetch_borough_outages", new_callable=AsyncMock,
+               return_value=scraper_incidents):
+        from app.services.coned_client import fetch_incidents
+        result = await fetch_incidents()
+
+    assert len(result) == 1
+    assert result[0].customers_affected == 43
+    assert result[0].outage_count == 20
+
+
+@pytest.mark.asyncio
+async def test_coned_client_falls_back_on_empty_scraper():
+    """ConEd client falls back to summary API when scraper returns empty."""
+    meta_json = {"directory": "2026_03_08"}
+    data_json = {
+        "summaryFileData": {
+            "total_outages": 50,
+            "total_cust_a": {"val": 500},
+            "date_generated": "2026-03-08T12:00:00",
+        }
+    }
+
+    mock_meta_resp = MagicMock()
+    mock_meta_resp.json.return_value = meta_json
+    mock_meta_resp.raise_for_status = MagicMock()
+
+    mock_data_resp = MagicMock()
+    mock_data_resp.json.return_value = data_json
+    mock_data_resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=[mock_meta_resp, mock_data_resp])
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.services.coned_client.fetch_borough_outages", new_callable=AsyncMock,
+               return_value=[]), \
+         patch("app.services.coned_client.httpx.AsyncClient", return_value=mock_client):
+        from app.services.coned_client import fetch_incidents
+        result = await fetch_incidents()
+
+    assert len(result) == 6  # proportional distribution across 6 zones
+
+
+# --- Manual override ---
+
+def test_override_set_and_get():
+    """Setting an override stores it and returns expiry."""
+    _override_cache.clear()
+    expires = set_outage_override("CONED-BKN", active_outages=20, customers_affected=43, ttl_minutes=60)
+    assert expires > datetime.now(timezone.utc)
+
+    overrides = get_active_overrides()
+    assert len(overrides) == 1
+    assert overrides[0]["zone_id"] == "CONED-BKN"
+    assert overrides[0]["active_outages"] == 20
+    assert overrides[0]["customers_affected"] == 43
+    _override_cache.clear()
+
+
+def test_override_clear():
+    """Clearing an override removes it."""
+    _override_cache.clear()
+    set_outage_override("CONED-BKN", active_outages=10, customers_affected=50)
+    assert clear_outage_override("CONED-BKN") is True
+    assert clear_outage_override("CONED-BKN") is False  # already removed
+    assert get_active_overrides() == []
+    _override_cache.clear()
+
+
+def test_override_expired_not_returned():
+    """Expired overrides are cleaned up and not returned."""
+    _override_cache.clear()
+    now = datetime.now(timezone.utc)
+    expired_status = ZoneOutageStatus(zone_id="CONED-MAN", active_outages=5, customers_affected=10)
+    _override_cache["CONED-MAN"] = (expired_status, now - timedelta(minutes=1))
+
+    overrides = get_active_overrides()
+    assert len(overrides) == 0
+    assert "CONED-MAN" not in _override_cache
+    _override_cache.clear()
+
+
+def test_override_applies_to_live_cache():
+    """Setting an override immediately updates the live outage cache."""
+    _outage_cache.clear()
+    _override_cache.clear()
+
+    # Seed the live cache
+    _outage_cache["CONED-BKN"] = ZoneOutageStatus(
+        zone_id="CONED-BKN", active_outages=5, customers_affected=20,
+    )
+
+    set_outage_override("CONED-BKN", active_outages=20, customers_affected=43)
+
+    # Live cache should reflect override
+    assert _outage_cache["CONED-BKN"].active_outages == 20
+    assert _outage_cache["CONED-BKN"].customers_affected == 43
+    _outage_cache.clear()
+    _override_cache.clear()
+
+
+@pytest.mark.asyncio
+async def test_override_applied_during_ingest():
+    """Override values persist through an ingest cycle."""
+    _override_cache.clear()
+    _outage_cache.clear()
+
+    # Set override for Brooklyn
+    set_outage_override("CONED-BKN", active_outages=99, customers_affected=999, ttl_minutes=60)
+
+    # Run ingest with no external data
+    with patch("app.services.outage_ingest.nyc311_client.fetch_incidents", new_callable=AsyncMock, return_value=[]), \
+         patch("app.services.outage_ingest.coned_client.fetch_incidents", new_callable=AsyncMock, return_value=[]), \
+         patch("app.services.outage_ingest.poweroutage_us_client.fetch_incidents", new_callable=AsyncMock, return_value=[]), \
+         patch("app.services.outage_ingest._persist_snapshots"):
+        from app.services.outage_ingest import ingest_outages
+        await ingest_outages()
+
+    bkn = _outage_cache.get("CONED-BKN")
+    assert bkn is not None
+    assert bkn.active_outages == 99
+    assert bkn.customers_affected == 999
+    _outage_cache.clear()
+    _override_cache.clear()
+
+
+def test_override_schema_validation():
+    """Override request schema validates fields."""
+    req = OutageOverrideRequest(zone_id="CONED-BKN", active_outages=20, customers_affected=43)
+    assert req.ttl_minutes == 120  # default
+
+    req2 = OutageOverrideRequest(zone_id="CONED-MAN", active_outages=5, customers_affected=10, ttl_minutes=60)
+    assert req2.ttl_minutes == 60
+
+    resp = OutageOverrideResponse(
+        zone_id="CONED-BKN", active_outages=20, customers_affected=43,
+        expires_at=datetime.now(timezone.utc),
+    )
+    assert resp.zone_id == "CONED-BKN"
